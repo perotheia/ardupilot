@@ -106,9 +106,29 @@ void Scheduler::delay_microseconds(uint16_t us)
     // (instead of busy-wait) for that thread only.
     if (s_dds_tid != nullptr && k_current_get() == s_dds_tid) {
         k_usleep(us);
-    } else {
-        k_busy_wait(us);
+        return;
     }
+#if CONFIG_AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US > 0
+    // Long waits (the main loop's wait for the next IMU sample is most of a
+    // loop period) sleep, so lower-priority threads run and idle shows real
+    // headroom. k_usleep() wakes on a tick boundary up to one tick late, so
+    // sleep until one tick + margin before the deadline and busy-wait the
+    // rest: the deadline stays exact.
+    if (us >= CONFIG_AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US) {
+        const uint64_t end = AP_HAL::micros64() + us;
+        const uint32_t tick_us = 1000000U / CONFIG_SYS_CLOCK_TICKS_PER_SEC;
+        const uint32_t guard = tick_us + tick_us / 2U;
+        if (us > guard) {
+            k_usleep(us - guard);
+        }
+        const uint64_t now = AP_HAL::micros64();
+        if (now < end) {
+            k_busy_wait((uint32_t)(end - now));
+        }
+        return;
+    }
+#endif
+    k_busy_wait(us);
 }
 
 void Scheduler::register_timer_process(AP_HAL::MemberProc proc)

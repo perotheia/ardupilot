@@ -63,6 +63,15 @@ config AP_HAL_BOARD_VOLTAGE_MV
 	  Value reported by AnalogIn::board_voltage(); only relevant
 	  when there is no VCC-monitor ADC channel.
 
+config AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US
+	int "Scheduler::delay_microseconds(): sleep for waits of at least N us (0 = always busy-wait)"
+	default 0
+	help
+	  Waits this long or longer sleep until 1.5 ticks before the
+	  deadline and busy-wait the rest (exact deadline, idle CPU for the
+	  lower-priority threads); shorter waits busy-wait. 0 keeps the
+	  busy-wait for every wait.
+
 config AP_HAL_ZEPHYR_MONITOR
 	bool "HAL monitor: periodic status lines on the console"
 	select THREAD_MONITOR
