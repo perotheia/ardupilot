@@ -140,6 +140,19 @@ def configure(cfg):
     board_conf = env.DTC_OVERLAY_FILE[:-len('.overlay')] + '.conf'
     env.ZEPHYR_BOARD_CONF = board_conf if os.path.exists(board_conf) else ''
 
+    # Build variants: an extra devicetree overlay and Kconfig fragment from the
+    # environment, applied after the board's own (e.g. a sensor set that must
+    # not be enabled in the default build).
+    _extra_dts = os.environ.get('ZEPHYR_EXTRA_DTC_OVERLAY', '')
+    _extra_conf = os.environ.get('ZEPHYR_EXTRA_CONF', '')
+    for _f in (_extra_dts, _extra_conf):
+        if _f and not os.path.exists(_f):
+            cfg.fatal('AP_HAL_Zephyr: build variant file not found: %s' % _f)
+    if _extra_dts:
+        env.DTC_OVERLAY_FILE = env.DTC_OVERLAY_FILE + ';' + _extra_dts
+    if _extra_conf:
+        env.ZEPHYR_BOARD_CONF = ';'.join(f for f in (env.ZEPHYR_BOARD_CONF, _extra_conf) if f)
+
     env.CMAKE_PROJECT_NAME   = 'ardupilot-zephyr'
     env.Zephyr_DIR           = os.path.join(zephyr_base, 'share/zephyr-package/cmake')
     _workspace_root = os.path.dirname(ardupilot_root)
