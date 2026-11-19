@@ -101,7 +101,9 @@ void RCInput::_uart_isr(const struct device *dev, void *user_data)
 {
     RCInput *self = static_cast<RCInput *>(user_data);
     const uint32_t baud = self ? self->_current_baud : 115200u;
-    while (uart_irq_update(dev) && uart_irq_rx_ready(dev)) {
+    // uart_irq_update() returns void since Zephyr 4.x: update once, then drain
+    uart_irq_update(dev);
+    while (uart_irq_rx_ready(dev)) {
         uint8_t byte;
         if (uart_fifo_read(dev, &byte, 1) == 1) {
             AP::RC().process_byte(byte, baud);
