@@ -6,13 +6,14 @@
  * cross the boundary.
  *
  * Threading contract:
- *  - ap_rpmsg_serial_write() runs in the AP_DDS thread; it is NON-BLOCKING and
- *    returns how many bytes were accepted into the TX ring (the rpmsg mng
- *    thread drains that ring into the 8x512B pool with rpmsg_trysend).
- *  - ap_rpmsg_serial_read()/_rxavail()/_discard_rx() run in the AP_DDS thread;
- *    the RX ring is filled by the rpmsg rx callback in the mng thread.
- * Both rings are strict single-producer/single-consumer (Zephyr ring_buf), so
- * no extra locking is required.
+ *  - ap_rpmsg_serial_write() may be called from any thread (MAVLink in the
+ *    main thread, hal.console from others): it is NON-BLOCKING, serialises
+ *    the writers with irq_lock() and returns how many bytes were accepted
+ *    into the TX ring (the rpmsg mng thread drains that ring into the rpmsg
+ *    buffer pool with rpmsg_trysend).
+ *  - ap_rpmsg_serial_read()/_rxavail()/_discard_rx() are for ONE reading
+ *    thread; the RX ring is filled by the rpmsg rx callback in the mng thread.
+ * Producer against consumer needs no lock (Zephyr ring_buf).
  *
  * SPDX-License-Identifier: (GPL-2.0 OR MIT)
  */

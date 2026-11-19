@@ -74,6 +74,8 @@ size_t RPMsgUARTDriver::_write(const uint8_t *buffer, size_t size)
     if (!_initialized || buffer == nullptr || size == 0) {
         return 0;
     }
+    // several threads write this port (MAVLink, hal.console): the bridge
+    // takes irq_lock() around its ring put, as UARTDriver::_write() does
     return (size_t)ap_rpmsg_serial_write(buffer, (uint32_t)size);
 }
 

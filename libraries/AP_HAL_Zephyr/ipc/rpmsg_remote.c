@@ -39,16 +39,18 @@ LOG_MODULE_REGISTER(ap_rpmsg, LOG_LEVEL_INF);
 #define SHM_SIZE        DT_REG_SIZE(SHM_NODE)
 
 #define RPMSG_THREAD_STACK_SIZE 4096
-/* PREEMPTIBLE at prio 5 (== ap_io): above main (prio 8) so it can always
+/* PREEMPTIBLE at prio 5: above main (prio 8) so it can always
  * drain TX/RX; below the fast loop (ap_timer prio 2), which always preempts.
  * Yields k_sleep(1ms) each batch (rpmsg_mng_task) so it cannot starve main
  * under sustained DDS traffic. */
 #define RPMSG_THREAD_PRIO       K_PRIO_PREEMPT(5)
 #define RPROC_READY_TIMEOUT     K_SECONDS(15)
 
-/* Byte-stream bridge buffers for AP_DDS (RPMsgUARTDriver rides these).
- * Single-producer/single-consumer per ring (rx: mng thread fills, DDS thread
- * drains; tx: reverse) -- no locking needed. */
+/* Byte-stream bridge buffers (RPMsgUARTDriver rides these). Each ring has
+ * one consumer (rx: the reading thread; tx: the mng thread). The rx ring has
+ * one producer (the mng thread). The tx ring has several (every thread that
+ * writes the serial port: MAVLink, hal.console): ap_rpmsg_serial_write()
+ * serialises them with irq_lock(); producer against consumer needs none. */
 #define RPMSG_RX_RING_SIZE      4096
 #define RPMSG_TX_RING_SIZE      8192
 
@@ -103,15 +105,18 @@ static void platform_ipm_callback(const struct device *dev, void *context,
 	k_sem_give(&data_sem);
 }
 
-/* OpenAMP kick: notify the master that vring `id` has work. The IHC channel
- * holds only one outstanding message (-EBUSY if unconsumed); retry with a
- * yield rather than busy-spin, up to ~4s so a dead Linux peer can't block the
- * FC (link just stays idle until it returns -- rpmsg-virtio kicks coalesce). */
+/* OpenAMP kick: notify the master that vring `id` has work. The mailbox
+ * holds a bounded number of unread messages (-EBUSY when full: one on the
+ * IHC); retry with a sleep rather than busy-spin, at most 4000 times so a
+ * dead Linux peer cannot block this thread forever (the link just stays idle
+ * until it returns -- rpmsg-virtio kicks coalesce). k_usleep(50) rounds up
+ * to a tick and wakes on the tick edge after that: 1..2 ms per try at
+ * 1000 ticks/s, so the ceiling is 4..8 s, in which only this thread waits. */
 static int mailbox_notify(void *priv, uint32_t id)
 {
 	ARG_UNUSED(priv);
 
-	for (int i = 0; i < 4000; i++) {        /* ~4 s ceiling @ 1 ms tick */
+	for (int i = 0; i < 4000; i++) {
 		/* wait=0: fire-and-forget -- wait=1 busy-waits for Linux's ACK
 		 * while holding the channel mutex at prio 5, which can starve
 		 * main and freeze the FC. */
@@ -255,12 +260,16 @@ fail:
 }
 
 /* Mirrors Linux's `rpmsg_client_sample` module; kept alongside the DDS
- * endpoint as a zero-cost link-liveness check. */
+ * endpoint as a zero-cost link-liveness check. Runs in the mng thread:
+ * rpmsg_trysend, never rpmsg_send, which waits up to 15 s for a free TX
+ * buffer and would stall the serial bridge for that long. An echo that
+ * finds no buffer is dropped. */
 static int echo_cb(struct rpmsg_endpoint *ept, void *data, size_t len,
 		   uint32_t src, void *priv)
 {
+	ARG_UNUSED(src);
 	ARG_UNUSED(priv);
-	(void)rpmsg_send(ept, data, len);
+	(void)rpmsg_trysend(ept, data, len);
 	return RPMSG_SUCCESS;
 }
 
@@ -349,7 +358,10 @@ uint32_t ap_rpmsg_serial_write(const uint8_t *src, uint32_t len)
 	if (src == NULL || len == 0) {
 		return 0;
 	}
+	/* several producer threads: one at a time (as UARTDriver::_write) */
+	unsigned int key = irq_lock();
 	uint32_t put = ring_buf_put(&rpmsg_tx_ring, src, len);
+	irq_unlock(key);
 	/* DBG only: per-write log would storm at DDS rates. */
 	LOG_DBG("ap_rpmsg_serial_write len=%u put=%u", (unsigned)len, (unsigned)put);
 	if (put > 0) {
