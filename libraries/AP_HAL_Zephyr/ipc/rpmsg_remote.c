@@ -84,6 +84,12 @@ static K_SEM_DEFINE(data_sem, 0, 1);
 
 /* Board hook for remoteproc control messages carried on the mailbox (e.g. the
  * TI K3 RP_MBOX_SHUTDOWN request); ISR context. Default: none. */
+/* Board hook: the RPMsg device is up; create board endpoints here. Default: none. */
+__weak void ap_rpmsg_board_link_up(struct rpmsg_device *rdev)
+{
+	ARG_UNUSED(rdev);
+}
+
 __weak void ap_rpmsg_board_ipm_msg(const struct device *dev, uint32_t id,
 				   volatile void *data)
 {
@@ -426,6 +432,7 @@ static void rpmsg_mng_task(void *a, void *b, void *c)
 		tx_chunk_max = 480;
 	}
 	atomic_set(&dds_link_up, 1);
+	ap_rpmsg_board_link_up(rpdev);
 
 	LOG_INF("rpmsg link up (echo + dds 'rpmsg-tty', mtu %d)", tx_chunk_max);
 
