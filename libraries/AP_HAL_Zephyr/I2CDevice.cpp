@@ -25,17 +25,21 @@ const struct device *I2CDeviceManager::_bus_device(uint8_t bus)
     }
 }
 
-I2CDevice::I2CDevice(const struct device *dev, uint8_t address, uint32_t bus_clock) :
+I2CDevice::I2CDevice(const struct device *dev, uint8_t bus, uint8_t address, uint32_t bus_clock) :
     _dev(dev),
     _address(address),
     _retries(0),
     _bus_clock(bus_clock)
 {
+    /* bus and address are part of the device id: two identical sensors on one bus are two devices */
+    set_device_bus(bus);
+    set_device_address(address);
 }
 
 void I2CDevice::set_address(uint8_t address)
 {
     _address = address;
+    set_device_address(address);
 }
 
 void I2CDevice::set_retries(uint8_t retries)
@@ -200,5 +204,5 @@ AP_HAL::I2CDevice *I2CDeviceManager::get_device_ptr(uint8_t bus, uint8_t address
     (void)bus_clock;
 #endif
 
-    return NEW_NOTHROW I2CDevice(dev, address, bus_clock);
+    return NEW_NOTHROW I2CDevice(dev, bus, address, bus_clock);
 }

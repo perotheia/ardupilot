@@ -9,7 +9,7 @@ struct device;
 
 class Zephyr::I2CDevice : public AP_HAL::I2CDevice {
 public:
-    I2CDevice(const struct device *dev, uint8_t address, uint32_t bus_clock);
+    I2CDevice(const struct device *dev, uint8_t bus, uint8_t address, uint32_t bus_clock);
 
     void set_address(uint8_t address) override;
     void set_retries(uint8_t retries) override;
