@@ -110,6 +110,92 @@ config AP_HAL_ZEPHYR_MAIN_STUCK_MS
 	  It does not catch a stuck timer thread or a dead core: that needs
 	  a hardware watchdog.
 
+config AP_HAL_ZEPHYR_MOTOR_BRIDGE
+	bool "Motor bridge layer (ardupilot,motor-bridge devicetree node)"
+	depends on PWM && GPIO && ADC
+	help
+	  The two motor RCOutput channels (servo-channels) drive the bridge
+	  through the state machine in motor_bridge.c from a 1 kHz timer
+	  process: ramps, reversal dead time, brakes, current foldback and trip,
+	  current-sense plausibility, motor bus over-voltage, e-stop, a command
+	  watchdog, hard and soft stops, the DRV_ARM dead-man square wave.
+
+if AP_HAL_ZEPHYR_MOTOR_BRIDGE
+
+config AP_HAL_ZEPHYR_MB_PWM_HZ
+	int "Bridge PWM frequency"
+	default 20000
+
+config AP_HAL_ZEPHYR_MB_SLEW_PER_MS
+	int "Duty slew, 1/10000 per ms (20 = 0 -> 100 % in 0.5 s)"
+	default 20
+
+config AP_HAL_ZEPHYR_MB_REVERSAL_DEAD_MS
+	int "Dead time at 0 between directions, ms"
+	default 20
+
+config AP_HAL_ZEPHYR_MB_BRAKE_RELEASE_MS
+	int "Brake opening time before the duty may rise, ms"
+	default 100
+
+config AP_HAL_ZEPHYR_MB_BRAKE_HOLD_MS
+	int "Rest time at 0 before the brake is applied again, ms"
+	default 500
+
+config AP_HAL_ZEPHYR_MB_CMD_TIMEOUT_MS
+	int "No fresh motor command for this long: soft stop, ms"
+	default 100
+
+config AP_HAL_ZEPHYR_MB_I_LIMIT_MA
+	int "Current foldback above, mA (0 = off)"
+	default 20000
+
+config AP_HAL_ZEPHYR_MB_I_TRIP_MA
+	int "Over-current trip above, mA (0 = off)"
+	default 40000
+
+config AP_HAL_ZEPHYR_MB_TRIP_MS
+	int "Over-current trip after, ms"
+	default 10
+
+config AP_HAL_ZEPHYR_MB_SOFT_SLEW_PER_MS
+	int "Soft stop ramp, 1/10000 per ms (34 = 100 % -> 0 in ~0.3 s)"
+	default 34
+
+config AP_HAL_ZEPHYR_MB_SOFT_MAX_MS
+	int "A soft stop ends in the safe state after, ms"
+	default 600
+
+config AP_HAL_ZEPHYR_MB_IS_IDLE_MAX_MA
+	int "Plausibility: current reading above this with the bridge off = fault, mA (0 = off)"
+	default 3000
+
+config AP_HAL_ZEPHYR_MB_IS_DEAD_DUTY
+	int "Plausibility: duty above this (1/10000) ..."
+	default 3000
+
+config AP_HAL_ZEPHYR_MB_IS_DEAD_MIN_MA
+	int "... with a reading below this = fault, mA"
+	default 200
+
+config AP_HAL_ZEPHYR_MB_IS_FAULT_MS
+	int "Plausibility fault after, ms (0 = check off)"
+	default 50
+
+config AP_HAL_ZEPHYR_MB_VMOT_MAX_MV
+	int "Bus voltage (max of battery and motor bus) above which the duty ramps to 0, mV (0 = off; BTS7960 locks out at 27.6 V)"
+	default 27400
+
+config AP_HAL_ZEPHYR_MB_VMOT_HYST_MV
+	int "Driving allowed again (and at start) only below VMOT_MAX - this, mV (27.0 V)"
+	default 400
+
+config AP_HAL_ZEPHYR_MB_VMOT_LIVE_MV
+	int "Motor bus considered live above, mV (e-stop cross-check)"
+	default 5000
+
+endif
+
 config AP_HAL_ZEPHYR_MONITOR
 	bool "HAL monitor: periodic status lines on the console"
 	select THREAD_MONITOR

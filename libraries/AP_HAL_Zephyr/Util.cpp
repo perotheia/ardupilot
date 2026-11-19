@@ -14,6 +14,9 @@ extern "C" int malloc_runtime_stats_get(struct sys_memory_stats *stats);
 
 #include <AP_HAL_Zephyr/RCOutput.h>
 #include <AP_HAL_Zephyr/Scheduler.h>
+#ifdef CONFIG_AP_HAL_ZEPHYR_MOTOR_BRIDGE
+#include "MotorBridge.h"
+#endif
 
 using namespace Zephyr;
 
@@ -58,5 +61,11 @@ AP_HAL::Util::safety_state Util::safety_switch_state(void)
     if (rcout == nullptr) {
         return SAFETY_NONE;
     }
+#ifdef CONFIG_AP_HAL_ZEPHYR_MOTOR_BRIDGE
+    /* an open or latched e-stop reads as the safety switch on: no arming, and the GCS shows it */
+    if (Zephyr::MotorBridge::estop_active()) {
+        return SAFETY_DISARMED;
+    }
+#endif
     return rcout->safety_state();
 }

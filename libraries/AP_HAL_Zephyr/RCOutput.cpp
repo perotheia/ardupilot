@@ -11,6 +11,10 @@
 
 #include <zephyr/drivers/gpio.h>
 
+#ifdef CONFIG_AP_HAL_ZEPHYR_MOTOR_BRIDGE
+#include "MotorBridge.h"
+#endif
+
 #if DT_HAS_ALIAS(ardupilot_esc_enable)
 static const struct gpio_dt_spec esc_enable_spec =
     GPIO_DT_SPEC_GET(DT_ALIAS(ardupilot_esc_enable), gpios);
@@ -62,10 +66,20 @@ void RCOutput::init()
     if (!_has_pwm) { _pwm_dev = nullptr; }
 #endif
 #endif
+#ifdef CONFIG_AP_HAL_ZEPHYR_MOTOR_BRIDGE
+    Zephyr::MotorBridge::init();
+#endif
 }
 
 void RCOutput::_apply(uint8_t ch)
 {
+#ifdef CONFIG_AP_HAL_ZEPHYR_MOTOR_BRIDGE
+    /* motor channels belong to the motor bridge layer: it ramps, brakes and limits */
+    if (ch < NUM_CHANNELS && Zephyr::MotorBridge::is_motor_channel(ch)) {
+        Zephyr::MotorBridge::command(ch, _values[ch], _enabled[ch]);
+        return;
+    }
+#endif
 #ifdef CONFIG_PWM
     if (!_has_pwm || ch >= NUM_CHANNELS) {
         return;

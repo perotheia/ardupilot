@@ -1,0 +1,49 @@
+description: |
+  Two-sided motor bridge driven by AP_HAL_Zephyr's motor layer
+  (CONFIG_AP_HAL_ZEPHYR_MOTOR_BRIDGE, libraries/AP_HAL_Zephyr/motor_bridge.c): per side
+  a forward and a reverse PWM (BTS7960 RPWM/LPWM), a bridge enable and an
+  electromagnetic brake release; an output-stage arm line driven as a square
+  wave into a dead-man monostable; an e-stop sense input; current sense of
+  each half bridge and the motor bus voltage on ADC channels.
+
+compatible: "ardupilot,motor-bridge"
+
+properties:
+  pwms:
+    type: phandle-array
+    required: true
+    description: left forward, left reverse, right forward, right reverse
+  enable-gpios:
+    type: phandle-array
+    required: true
+    description: left, right bridge enable (active = enabled)
+  brake-gpios:
+    type: phandle-array
+    required: true
+    description: left, right brake (active = released)
+  drv-arm-gpios:
+    type: phandle-array
+    required: true
+    description: output-stage arm (square wave while live)
+  estop-gpios:
+    type: phandle-array
+    required: true
+    description: e-stop sense (active = e-stop open)
+  io-channels:
+    type: phandle-array
+    required: true
+    description: current sense left fwd, left rev, right fwd, right rev; motor bus voltage; battery voltage
+  servo-channels:
+    type: array
+    required: true
+    description: RCOutput channels of the left and right motor (0-based; SERVO1 = 0)
+  is-ma-per-mv:
+    type: array
+    required: true
+    description: |
+      current-sense scale per ADC channel, in mA per mV at the ADC ball,
+      times 1000 (e.g. 86207 = 86.207 mA/mV = 11.6 mV/A)
+  vmot-mv-per-mv:
+    type: int
+    required: true
+    description: motor bus and battery mV per mV at the ADC ball (e.g. 56)
