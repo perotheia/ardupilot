@@ -1,0 +1,34 @@
+/*
+ * Build variant "cam-imu" (setup/ardupilot-ai64.sh VARIANT=cam-imu, combinable: VARIANT=imu,cam-imu): two camera
+ * IMUs (LSM6DS3) on McSPI6, left on CS1 (P9_23), right on CS3 (P8_21), 4 MHz, mode 3, read by cam_imu.c and
+ * forwarded on RPMsg "imu-cam". SCLK/MOSI/MISO = P9_22/P9_21/P9_18 (BOOTMODE1 on P9_22: no pull-down). INT1 pins
+ * P9_11/P9_13 muxed on GPIO2 for later (polled FIFO for now). Linux must leave main_spi6 and these pads alone
+ * (ai64-r5f-cam-imu.dtso).
+ */
+&main_spi6 {
+	pinctrl-0 = <&mcspi6_default &mcspi6_cs3_default>;
+	pinctrl-names = "default";
+	ti,spi-num-cs = <4>;
+	ti,d1-miso-d0-mosi;
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	cam_imu_l: imu@1 {
+		compatible = "perotheia,lsm6ds3-fifo";
+		reg = <1>;
+		spi-max-frequency = <4000000>;
+		label-id = <0>;
+	};
+
+	cam_imu_r: imu@3 {
+		compatible = "perotheia,lsm6ds3-fifo";
+		reg = <3>;
+		spi-max-frequency = <4000000>;
+		label-id = <1>;
+	};
+};
+
+&main_gpio2_0 {
+	pinctrl-0 = <&motor_gpio_default &cam_imu_int_default>;
+};

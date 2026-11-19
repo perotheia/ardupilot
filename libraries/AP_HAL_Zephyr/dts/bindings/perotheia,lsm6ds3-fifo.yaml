@@ -1,0 +1,14 @@
+description: |
+  ST LSM6DS3 accelerometer + gyroscope read in FIFO batches by the AI-64
+  camera IMU forwarder (boards/beagle/beaglebone_ai64/cam_imu.c), not by
+  ArduPilot's sensor drivers. reg = the McSPI chip select.
+
+compatible: "perotheia,lsm6ds3-fifo"
+
+include: spi-device.yaml
+
+properties:
+  label-id:
+    type: int
+    required: true
+    description: device id in the forwarded samples (0 = left camera, 1 = right)

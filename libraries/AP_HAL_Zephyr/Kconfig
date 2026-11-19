@@ -228,6 +228,20 @@ config AP_HAL_ZEPHYR_MB_VMOT_LIVE_MV
 
 endif
 
+config AP_HAL_ZEPHYR_AI64_CAM_IMU
+	bool "BeagleBone AI-64: camera IMU forwarder (2x LSM6DS3 on SPI6 -> RPMsg imu-cam)"
+	depends on SPI && OPENAMP
+
+config AP_HAL_ZEPHYR_AI64_CAM_IMU_PERIOD_MS
+	int "Camera IMU FIFO read period, ms"
+	default 10
+	depends on AP_HAL_ZEPHYR_AI64_CAM_IMU
+
+config AP_HAL_ZEPHYR_AI64_CAM_IMU_ADDR
+	int "RPMsg local address of the imu-cam endpoint"
+	default 30
+	depends on AP_HAL_ZEPHYR_AI64_CAM_IMU
+
 config AP_HAL_ZEPHYR_MONITOR
 	bool "HAL monitor: periodic status lines on the console"
 	select THREAD_MONITOR

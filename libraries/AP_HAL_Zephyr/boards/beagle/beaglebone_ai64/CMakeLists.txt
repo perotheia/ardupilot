@@ -16,4 +16,7 @@ set(AP_BOARD_ABI_CFLAGS
 if(CONFIG_OPENAMP)
     zephyr_library_sources(${CMAKE_CURRENT_LIST_DIR}/../../../ipc/rpmsg_remote.c)
     zephyr_library_sources(${CMAKE_CURRENT_LIST_DIR}/ai64_board.c)
+    if(CONFIG_AP_HAL_ZEPHYR_AI64_CAM_IMU)
+        zephyr_library_sources(${CMAKE_CURRENT_LIST_DIR}/cam_imu.c)
+    endif()
 endif()
