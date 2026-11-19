@@ -167,8 +167,11 @@ void AP_InertialSensor_LSM6DS3::poll_data()
     uint16_t pattern = st[2] | ((st[3] & 0x03) << 8);
 
     if (overrun || pattern >= PATTERN_WORDS) {
-        /* lost samples (or a confused pattern): start clean */
+        /* lost samples (or a confused pattern): start clean; the frontend must not count the gap into the
+           measured sample rate */
         fifo_reset();
+        notify_accel_fifo_reset(accel_instance);
+        notify_gyro_fifo_reset(gyro_instance);
         _inc_gyro_error_count(gyro_instance);
         _inc_accel_error_count(accel_instance);
         return;
@@ -192,8 +195,12 @@ void AP_InertialSensor_LSM6DS3::poll_data()
         }
         for (uint16_t s = 0; s < sets; s++) {
             const uint8_t *p = buf + s * PATTERN_WORDS * 2;
-            Vector3f gyro(int16_t(p[0] | (p[1] << 8)), int16_t(p[2] | (p[3] << 8)), int16_t(p[4] | (p[5] << 8)));
-            Vector3f accel(int16_t(p[6] | (p[7] << 8)), int16_t(p[8] | (p[9] << 8)), int16_t(p[10] | (p[11] << 8)));
+            /* chip axes (x, y, z up) -> the board frame ArduPilot's Invensense driver uses (y, x, -z): a chip
+               mounted face up on the cape reads level with ROTATION_NONE, like the MPU-6050 beside it */
+            const int16_t gx = int16_t(p[0] | (p[1] << 8)), gy = int16_t(p[2] | (p[3] << 8)), gz = int16_t(p[4] | (p[5] << 8));
+            const int16_t ax = int16_t(p[6] | (p[7] << 8)), ay = int16_t(p[8] | (p[9] << 8)), az = int16_t(p[10] | (p[11] << 8));
+            Vector3f gyro(gy, gx, -float(gz));
+            Vector3f accel(ay, ax, -float(az));
             gyro *= gyro_scale;
             accel *= accel_scale;
             _rotate_and_correct_gyro(gyro_instance, gyro);

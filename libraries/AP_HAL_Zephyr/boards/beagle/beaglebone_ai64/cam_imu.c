@@ -12,6 +12,11 @@
  * alignment: a few us (the SPI read of 3 bytes at 4 MHz takes ~10 us; the midpoint is used).
  * The INT1 pins are muxed (GPIO2) but not used: the thread polls every CONFIG_..._PERIOD_MS.
  *
+ * Pairs with a GTC window > 100 us or off the model are dropped (the last good pair stays); nothing is stamped
+ * before the first good pair. Health: implausible FIFO status 3 times, or WHO_AM_I / CTRL1_XL / FIFO_CTRL5 not as
+ * set up (checked once a second) -> the device is set up again; while that fails, a LOST header goes out once a
+ * second. The thread holds priority 6 (= ArduPilot's device work queue) while it holds SPI6.
+ *
  * Packet (little endian): struct cam_imu_hdr, then n x struct cam_imu_sample.
  * Self-test at start: 'camimu: dev D (CSn) LSM6DS3|LSM6DS3TR-C|BMI160|ABSENT (0xXX)', GTC base/rate.
  * Register-level details (FIFO data set 4 byte order, TR-C timer bit) follow the datasheets: unverified on a
@@ -66,8 +71,9 @@ struct __packed cam_imu_hdr {
 	uint8_t version; /* 1 */
 	uint8_t dev;     /* 0 = left camera, 1 = right */
 	uint8_t n;       /* samples that follow */
-	uint8_t flags;   /* bit0 FIFO overrun, bit1 stamps not yet calibrated, bit2 temperature valid */
-	uint32_t seq;    /* per device, +1 per packet */
+	uint8_t flags;   /* bit0 FIFO overrun, bit1 rate still nominal, bit2 temperature valid, bit3 device set up
+			    again (clock restarted), bit4 device LOST (header only, n = 0, sent once a second) */
+	uint32_t seq;    /* per device, +1 per data packet */
 	uint32_t gtc_hz;
 	uint16_t odr_hz;
 	int16_t temp_cx100;      /* degC x 100 */
@@ -104,6 +110,13 @@ struct cam_imu {
 	uint64_t ticks_hi;
 	uint32_t batches;
 	uint32_t overruns;
+	bool rate_measured;     /* the rate comes from a >= 1 s baseline, not the nominal 25 us */
+	bool lost;              /* was present, failed a health check: re-set up every second */
+	bool reinit;            /* re-set up since the last packet (flag bit 3) */
+	uint8_t fault_streak;
+	uint32_t faults;
+	uint32_t pairs_rejected;
+	int64_t last_lost_report_ms;
 };
 
 static struct cam_imu cams[] = {
@@ -131,6 +144,25 @@ uint64_t ai64_gtc_read(void)
 	return ((uint64_t)hi << 32) | lo;
 }
 
+/*
+ * Priority ceiling while this thread holds SPI6: the Zephyr SPI lock is a semaphore (no priority inheritance), so
+ * a low-priority holder preempted by the main (8) or UART (9) threads would block ArduPilot's own IMU reads on CS0
+ * (device work queue, priority 6). Between transfers the thread runs at its own low priority.
+ */
+#define CAM_BUS_PRIO 6
+static int cam_bus_enter(void)
+{
+	const int old = k_thread_priority_get(k_current_get());
+
+	k_thread_priority_set(k_current_get(), CAM_BUS_PRIO);
+	return old;
+}
+
+static void cam_bus_leave(int old)
+{
+	k_thread_priority_set(k_current_get(), old);
+}
+
 static int lsm_read(const struct cam_imu *c, uint8_t reg, uint8_t *buf, size_t len)
 {
 	uint8_t cmd = reg | 0x80u;
@@ -139,7 +171,11 @@ static int lsm_read(const struct cam_imu *c, uint8_t reg, uint8_t *buf, size_t l
 	const struct spi_buf_set tx = {.buffers = tx_bufs, .count = 1};
 	const struct spi_buf_set rx = {.buffers = rx_bufs, .count = 2};
 
-	return spi_transceive_dt(&c->spi, &tx, &rx);
+	const int old = cam_bus_enter();
+	const int rc = spi_transceive_dt(&c->spi, &tx, &rx);
+
+	cam_bus_leave(old);
+	return rc;
 }
 
 static int lsm_write(const struct cam_imu *c, uint8_t reg, uint8_t val)
@@ -148,7 +184,22 @@ static int lsm_write(const struct cam_imu *c, uint8_t reg, uint8_t val)
 	const struct spi_buf tx_bufs[] = {{.buf = b, .len = 2}};
 	const struct spi_buf_set tx = {.buffers = tx_bufs, .count = 1};
 
-	return spi_write_dt(&c->spi, &tx);
+	const int old = cam_bus_enter();
+	const int rc = spi_write_dt(&c->spi, &tx);
+
+	cam_bus_leave(old);
+	return rc;
+}
+
+/* write and read back (an SPI write alone proves nothing: an absent chip 'accepts' every write) */
+static int lsm_write_check(const struct cam_imu *c, uint8_t reg, uint8_t val)
+{
+	uint8_t back = 0;
+
+	if (lsm_write(c, reg, val) != 0 || lsm_read(c, reg, &back, 1) != 0) {
+		return -EIO;
+	}
+	return back == val ? 0 : -EIO;
 }
 
 static const char *cam_imu_kind(uint8_t who)
@@ -198,9 +249,9 @@ static bool lsm_setup(struct cam_imu *c)
 	/* reset, then: block data update + register auto-increment */
 	(void)lsm_write(c, LSM_CTRL3_C, 0x01);
 	k_msleep(20);
-	rc = lsm_write(c, LSM_CTRL3_C, 0x44);
-	rc |= lsm_write(c, LSM_CTRL1_XL, 0x74);    /* 833 Hz, +-16 g */
-	rc |= lsm_write(c, LSM_CTRL2_G, 0x7c);     /* 833 Hz, 2000 dps */
+	rc = lsm_write_check(c, LSM_CTRL3_C, 0x44);
+	rc |= lsm_write_check(c, LSM_CTRL1_XL, 0x74);    /* 833 Hz, +-16 g */
+	rc |= lsm_write_check(c, LSM_CTRL2_G, 0x7c);     /* 833 Hz, 2000 dps */
 	rc |= lsm_write(c, LSM_WAKE_UP_DUR, 0x10); /* TIMER_HR: 25 us timestamp resolution */
 	if (c->who == LSM_WHO_AM_I_TRC) {
 		rc |= lsm_write(c, LSM_CTRL10_C, 0x20); /* TIMER_EN (TR-C) */
@@ -212,8 +263,17 @@ static bool lsm_setup(struct cam_imu *c)
 	rc |= lsm_write(c, LSM_FIFO_CTRL2, 0x80);  /* TIMER_PEDO_FIFO_EN: timestamp as data set 4 */
 	rc |= lsm_write(c, LSM_FIFO_CTRL3, 0x09);  /* gyro and accel into the FIFO, no decimation */
 	rc |= lsm_write(c, LSM_FIFO_CTRL4, 0x08);  /* data set 4, no decimation */
-	rc |= lsm_write(c, LSM_FIFO_CTRL5, 0x3e);  /* FIFO ODR 833 Hz, continuous mode */
+	rc |= lsm_write_check(c, LSM_FIFO_CTRL5, 0x3e);  /* FIFO ODR 833 Hz, continuous mode */
+	/* the timestamp restarted: the clock model starts over */
+	c->calibrated = false;
+	c->rate_measured = false;
+	c->last_ticks = 0;
+	c->ticks_hi = 0;
+	c->fault_streak = 0;
 	c->present = (rc == 0);
+	if (!c->present) {
+		printk("camimu: dev %u setup read-back failed\n", c->id);
+	}
 	return c->present;
 }
 
@@ -227,46 +287,98 @@ static uint64_t lsm_unwrap(struct cam_imu *c, uint32_t t24)
 	return c->ticks_hi | t24;
 }
 
-/* read the device clock between two GTC reads: one (ticks, GTC) pair; update the rate model */
-static void lsm_pair(struct cam_imu *c)
-{
-	uint8_t ts[3];
-	uint64_t g0 = ai64_gtc_read();
-
-	if (lsm_read(c, LSM_TIMESTAMP0, ts, 3) != 0) {
-		return;
-	}
-	uint64_t g1 = ai64_gtc_read();
-	uint32_t t24 = ts[0] | (ts[1] << 8) | ((uint32_t)ts[2] << 16);
-
-	c->pair_ticks = t24;
-	c->pair_gtc = g0 + (g1 - g0) / 2u;
-	if (!c->calibrated) {
-		c->rate_q16 = ((uint64_t)gtc_hz * 25u / 1000000u) << 16; /* nominal 25 us */
-		c->ref_ticks = t24;
-		c->ref_gtc = c->pair_gtc;
-		c->calibrated = true;
-		return;
-	}
-	/* rate over the baseline since the reference (re-based every ~10 s), low-pass */
-	uint32_t dt = (t24 - c->ref_ticks) & 0xffffffu;
-	if (dt > 40000u) { /* >= 1 s of baseline */
-		uint64_t meas = ((c->pair_gtc - c->ref_gtc) << 16) / dt;
-
-		c->rate_q16 = (c->rate_q16 * 7u + meas) / 8u;
-		if (dt > 400000u) {
-			c->ref_ticks = t24;
-			c->ref_gtc = c->pair_gtc;
-		}
-	}
-}
-
 static uint64_t lsm_stamp(const struct cam_imu *c, uint32_t t24)
 {
 	/* signed 24-bit difference to the pair (the samples are a few ms older) */
 	int32_t d = (int32_t)((t24 - c->pair_ticks) << 8) >> 8;
 
 	return c->pair_gtc + (uint64_t)(((int64_t)d * (int64_t)c->rate_q16) >> 16);
+}
+
+/*
+ * Read the device clock between two GTC reads: one (ticks, GTC) pair; update the rate model. A pair is only as
+ * good as its GTC window: a read preempted or delayed on the shared bus (window > 100 us), or one that disagrees
+ * with the model (a torn 24-bit read), is dropped and the last good pair stays. Returns whether the pair is used.
+ */
+static bool lsm_pair(struct cam_imu *c)
+{
+	uint8_t ts[3];
+	const uint64_t g0 = ai64_gtc_read();
+
+	if (lsm_read(c, LSM_TIMESTAMP0, ts, 3) != 0) {
+		return false;
+	}
+	const uint64_t g1 = ai64_gtc_read();
+	const uint32_t t24 = ts[0] | (ts[1] << 8) | ((uint32_t)ts[2] << 16);
+	const uint64_t mid = g0 + (g1 - g0) / 2u;
+
+	if (g1 - g0 > gtc_hz / 10000u) {
+		c->pairs_rejected++;
+		return false;
+	}
+	if (c->calibrated) {
+		const uint64_t since = mid - c->pair_gtc;
+
+		if (since > 2ull * gtc_hz) {
+			/* no good pair for > 2 s: the model is too old to judge (and the 24-bit baseline may have
+			   wrapped): re-base on this pair, keep the rate */
+			c->pair_ticks = t24;
+			c->pair_gtc = mid;
+			c->ref_ticks = t24;
+			c->ref_gtc = mid;
+			return true;
+		}
+		/* tolerance: 100 us + the rate uncertainty over the time since the last pair (6 % nominal, 0.1 %
+		   measured) */
+		const int64_t err = (int64_t)(mid - lsm_stamp(c, t24));
+		const int64_t tol = (int64_t)(gtc_hz / 10000u) + (int64_t)(since / (c->rate_measured ? 1000u : 16u));
+
+		if (err > tol || err < -tol) {
+			c->pairs_rejected++;
+			return false;
+		}
+	}
+	c->pair_ticks = t24;
+	c->pair_gtc = mid;
+	if (!c->calibrated) {
+		c->rate_q16 = ((uint64_t)gtc_hz * 25u / 1000000u) << 16; /* nominal 25 us until measured */
+		c->ref_ticks = t24;
+		c->ref_gtc = mid;
+		c->calibrated = true;
+		return true;
+	}
+	/* rate over the baseline since the reference (re-based every ~10 s), low-pass once measured */
+	const uint32_t dt = (t24 - c->ref_ticks) & 0xffffffu;
+
+	if (dt > 40000u) { /* >= 1 s of baseline */
+		const uint64_t meas = ((mid - c->ref_gtc) << 16) / dt;
+
+		c->rate_q16 = c->rate_measured ? (c->rate_q16 * 7u + meas) / 8u : meas;
+		c->rate_measured = true;
+		if (dt > 400000u) {
+			c->ref_ticks = t24;
+			c->ref_gtc = mid;
+		}
+	}
+	return true;
+}
+
+/* WHO_AM_I + configuration still as set up (a chip reset or a loose wire shows here) */
+static bool lsm_healthy(struct cam_imu *c)
+{
+	uint8_t who = 0, ctrl1 = 0, fifo5 = 0;
+
+	return lsm_read(c, LSM_WHO_AM_I, &who, 1) == 0 && who == c->who &&
+	       lsm_read(c, LSM_CTRL1_XL, &ctrl1, 1) == 0 && ctrl1 == 0x74 &&
+	       lsm_read(c, LSM_FIFO_CTRL5, &fifo5, 1) == 0 && fifo5 == 0x3e;
+}
+
+static void lsm_lost(struct cam_imu *c, const char *why)
+{
+	printk("camimu: dev %u %s: setting it up again\n", c->id, why);
+	c->faults++;
+	c->lost = !lsm_setup(c);
+	c->reinit = true;
 }
 
 static void lsm_batch(struct cam_imu *c)
@@ -277,14 +389,33 @@ static void lsm_batch(struct cam_imu *c)
 	uint8_t st[4], buf[LSM_PATTERN_WORDS * 2 * 4];
 	uint32_t words, n = 0;
 
+	/* once a second: still the chip and the configuration we set up? */
+	if ((c->batches % 100u) == 99u && !lsm_healthy(c)) {
+		lsm_lost(c, "failed the health check");
+		return;
+	}
 	if (lsm_read(c, LSM_FIFO_STATUS1, st, 4) != 0) {
 		return;
 	}
 	words = st[0] | ((st[1] & 0x0fu) << 8);
 	const bool overrun = (st[1] & 0x40u) != 0;
 	uint32_t pattern = st[2] | ((st[3] & 0x03u) << 8);
+	const uint32_t depth = c->who == LSM_WHO_AM_I_TRC ? 2048u : 4096u;
 
-	lsm_pair(c);
+	/* impossible status (an absent chip reads 0xff: words 4095, pattern 1023): no data from it */
+	if (pattern >= LSM_PATTERN_WORDS || words > depth) {
+		c->batches++;
+		if (++c->fault_streak >= 3u) {
+			lsm_lost(c, "FIFO status implausible 3 times");
+		}
+		return;
+	}
+	c->fault_streak = 0;
+	(void)lsm_pair(c);
+	if (!c->calibrated) {
+		c->batches++;
+		return; /* no good pair yet: nothing can be stamped (the FIFO keeps the samples) */
+	}
 	/* realign to the start of a pattern */
 	while (pattern != 0 && words > 0) {
 		uint8_t w[2];
@@ -319,8 +450,10 @@ static void lsm_batch(struct cam_imu *c)
 	h->version = 1;
 	h->dev = c->id;
 	h->n = (uint8_t)n;
-	h->flags = (overrun ? 1u : 0u) | (c->calibrated ? 0u : 2u);
-	h->seq = c->seq++;
+	/* flags: 1 FIFO overrun, 2 rate still nominal (stamps less exact), 4 temperature valid, 8 the device was set
+	   up again since the last packet (its clock restarted) */
+	h->flags = (overrun ? 1u : 0u) | (c->rate_measured ? 0u : 2u) | (c->reinit ? 8u : 0u);
+	h->seq = c->seq;
 	h->gtc_hz = gtc_hz;
 	h->odr_hz = 833;
 	h->temp_cx100 = 0;
@@ -330,7 +463,10 @@ static void lsm_batch(struct cam_imu *c)
 		uint8_t t[2];
 
 		if (lsm_read(c, LSM_OUT_TEMP_L, t, 2) == 0) {
-			h->temp_cx100 = (int16_t)(2500 + ((int16_t)sys_get_le16(t) * 100) / 16);
+			/* 16 LSB/degC (LSM6DS3), 256 LSB/degC (LSM6DS3TR-C), 0 = 25 degC */
+			const int32_t lsb = c->who == LSM_WHO_AM_I_TRC ? 256 : 16;
+
+			h->temp_cx100 = (int16_t)(2500 + ((int32_t)(int16_t)sys_get_le16(t) * 100) / lsb);
 			h->flags |= 4u;
 		}
 	}
@@ -338,18 +474,21 @@ static void lsm_batch(struct cam_imu *c)
 		c->overruns++;
 	}
 	if (atomic_get(&cam_ept_up) && n > 0) {
-		(void)rpmsg_trysend(&cam_ept, pkt, sizeof(*h) + n * sizeof(struct cam_imu_sample));
+		/* seq counts data packets only: a gap on Linux is a lost packet */
+		if (rpmsg_trysend(&cam_ept, pkt, sizeof(*h) + n * sizeof(struct cam_imu_sample)) >= 0) {
+			c->reinit = false;
+		}
+		c->seq++;
 	}
 }
 
 static int cam_ept_cb(struct rpmsg_endpoint *ept, void *data, size_t len, uint32_t src, void *priv)
 {
-	ARG_UNUSED(ept);
 	ARG_UNUSED(data);
 	ARG_UNUSED(len);
-	ARG_UNUSED(src);
 	ARG_UNUSED(priv);
-	/* the first message from Linux binds the destination; nothing else is expected */
+	/* every message from Linux (re)binds the destination: a restarted reader gets a new endpoint address */
+	ept->dest_addr = src;
 	return RPMSG_SUCCESS;
 }
 
@@ -388,13 +527,28 @@ static void cam_imu_fn(void *a, void *b, void *d)
 	}
 	for (;;) {
 		k_msleep(CONFIG_AP_HAL_ZEPHYR_AI64_CAM_IMU_PERIOD_MS);
+		const int64_t now = k_uptime_get();
+
 		for (size_t i = 0; i < ARRAY_SIZE(cams); i++) {
-			if (cams[i].present) {
-				lsm_batch(&cams[i]);
+			struct cam_imu *c = &cams[i];
+
+			if (c->present) {
+				lsm_batch(c);
+			} else if (c->lost && now - c->last_lost_report_ms >= 1000) {
+				/* a device that was there: tell Linux once a second (header only, flag 16) and retry */
+				struct cam_imu_hdr h = {.magic = CAM_IMU_MAGIC, .version = 1, .dev = c->id, .n = 0,
+							.flags = 16u, .seq = c->seq, .gtc_hz = gtc_hz, .odr_hz = 833};
+
+				c->last_lost_report_ms = now;
+				if (atomic_get(&cam_ept_up)) {
+					(void)rpmsg_trysend(&cam_ept, &h, sizeof(h));
+				}
+				c->lost = !lsm_setup(c);
+				c->reinit = true;
 			}
 		}
 	}
 }
 
-/* below ArduPilot's main thread (8): it never delays the vehicle */
+/* below ArduPilot's main thread (8) between transfers; at 6 while it holds SPI6 (cam_bus_enter) */
 K_THREAD_DEFINE(cam_imu_tid, 2048, cam_imu_fn, NULL, NULL, NULL, K_PRIO_PREEMPT(10), 0, 3000);
