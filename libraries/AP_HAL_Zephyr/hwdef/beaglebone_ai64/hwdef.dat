@@ -1,0 +1,4 @@
+# hwdef.h holds the real config; this file just registers the board with WAF.
+define HAL_BOARD_NAME "BeagleBone-AI64-R5F"
+define ZEPHYR_BOARD  beaglebone_ai64/j721e/main_r5f1_0
+define ZEPHYR_SDK_TARGET arm-zephyr-eabi
