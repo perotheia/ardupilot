@@ -11,6 +11,7 @@ UARTDriver::UARTDriver(uint8_t serial_index) :
     _device(nullptr),
     _baudrate(0),
     _initialized(false),
+    _setup_done(false),
     _serial_index(serial_index)
 #ifdef CONFIG_AP_HAL_UART_PLIC_REARM
     , _irq_num(0)
@@ -164,6 +165,29 @@ AP_HAL::UARTDriver::flow_control UARTDriver::get_flow_control(void)
 #define CONFIG_AP_HAL_UART_SERIAL0_MIN_BAUD 0
 #endif
 
+// Discard the received bytes from the consumer side. Never ring_buf_reset()
+// or ring_buf_init() on a live ring: the ISR is the producer and may be in
+// the middle of a put. irq_lock() because this and _read() can be different
+// threads (two consumers); at most RX_BUF_SIZE bytes are copied out, a few
+// microseconds. (A NULL destination discards without the copy only in some
+// ring_buf versions/configurations: not relied on.)
+void UARTDriver::_drain_rx()
+{
+    uint8_t tmp[64];
+    const unsigned int key = irq_lock();
+    while (ring_buf_get(&_rx_ring, tmp, sizeof(tmp)) > 0) {
+    }
+    irq_unlock(key);
+}
+
+/*
+  The first call resolves the device, initialises the rings and attaches the
+  ISR. Later calls (the GPS driver's autobaud calls begin() again and again)
+  only change the baud rate: the ISR is live then, so the device pointer and
+  the rings are not touched again, and the UART's RX/TX interrupts are masked
+  around the reconfiguration. Bytes received at the old rate are discarded;
+  bytes still queued for TX go out at the new rate.
+ */
 void UARTDriver::_begin(uint32_t baud, uint16_t rxSpace, uint16_t txSpace)
 {
     (void)rxSpace;
@@ -178,14 +202,15 @@ void UARTDriver::_begin(uint32_t baud, uint16_t rxSpace, uint16_t txSpace)
 #endif
 
     _baudrate = baud;
-    _resolve_device();
 
-    if (_device == nullptr) {
-        return;
+    if (!_setup_done) {
+        _resolve_device();
+        if (_device == nullptr) {
+            return;
+        }
+        ring_buf_init(&_rx_ring, RX_BUF_SIZE, _rx_buf_data);
+        ring_buf_init(&_tx_ring, TX_BUF_SIZE, _tx_buf_data);
     }
-
-    ring_buf_init(&_rx_ring, RX_BUF_SIZE, _rx_buf_data);
-    ring_buf_init(&_tx_ring, TX_BUF_SIZE, _tx_buf_data);
 
     if (_device == nullptr) {
         return;
@@ -197,19 +222,40 @@ void UARTDriver::_begin(uint32_t baud, uint16_t rxSpace, uint16_t txSpace)
         struct uart_config cfg;
         if (uart_config_get(_device, &cfg) == 0) {
             if (cfg.baudrate != baud) {
+                const uint32_t old_baud = cfg.baudrate;
+                if (_setup_done) {
+                    uart_irq_rx_disable(_device);
+                    uart_irq_tx_disable(_device);
+                }
                 cfg.baudrate = baud;
-                uart_configure(_device, &cfg);
+                const int ret = uart_configure(_device, &cfg);
+                if (ret != 0) {
+                    // the port keeps its old rate: report that one
+                    printk("AP_HAL_Zephyr: serial%u: uart_configure(%u baud) failed (%d), "
+                           "still %u\n", (unsigned)_serial_index, (unsigned)baud, ret,
+                           (unsigned)old_baud);
+                    _baudrate = old_baud;
+                } else if (_setup_done) {
+                    _drain_rx();
+                }
             }
         }
     }
 
-    uart_irq_callback_user_data_set(_device, _uart_irq_cb, this);
+    if (!_setup_done) {
+        uart_irq_callback_user_data_set(_device, _uart_irq_cb, this);
+        _setup_done = true;
+    }
 #ifdef CONFIG_AP_HAL_UART_PLIC_REARM
     if (_irq_num != 0) {
         irq_enable(_irq_num);
     }
 #endif
     uart_irq_rx_enable(_device);
+    // TX was masked around a reconfiguration: restart it if bytes wait
+    if (!ring_buf_is_empty(&_tx_ring)) {
+        uart_irq_tx_enable(_device);
+    }
 
 #ifdef CONFIG_AP_HAL_UART_PLIC_REARM
     if (!_tx_watchdog_registered) {
@@ -217,6 +263,8 @@ void UARTDriver::_begin(uint32_t baud, uint16_t rxSpace, uint16_t txSpace)
         _tx_watchdog_registered = true;
     }
 #endif
+#else
+    _setup_done = true;
 #endif
 
     _initialized = true;
@@ -324,6 +372,6 @@ bool UARTDriver::_discard_input()
     if (!_initialized) {
         return false;
     }
-    ring_buf_reset(&_rx_ring);
+    _drain_rx();
     return true;
 }

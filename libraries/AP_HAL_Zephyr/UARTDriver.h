@@ -39,6 +39,7 @@ private:
     const struct device *_device;
     uint32_t  _baudrate;
     bool      _initialized;
+    bool      _setup_done;   // device resolved, rings initialised, ISR attached
     uint8_t   _serial_index;
 
     uint8_t         _rx_buf_data[RX_BUF_SIZE];
@@ -59,4 +60,5 @@ private:
 #endif
 
     void _resolve_device();
+    void _drain_rx();
 };
