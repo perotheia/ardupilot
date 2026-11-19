@@ -75,8 +75,12 @@
 
 // Serial map:
 //   SERIAL0 = rpmsg-tty  MAVLink2 to Linux (/dev/ttyRPMSGn), baud ignored
-//   SERIAL1 = UART4      ExpressLRS in MAVLink mode (RC + telemetry), 460800
-//   SERIAL3 = UART6      u-blox GPS (autobaud; 38400 to start)
+//   SERIAL1 = UART8      P8_28 RX / P8_29 TX: ExpressLRS in MAVLink mode
+//                        (RC + telemetry), 460800
+//   SERIAL3 = UART6      P9_14 RX / P9_16 TX: u-blox GPS (autobaud; 38400 to
+//                        start)
+// P9_33 and P9_35..P9_40 are analog-only 1.8 V pins (MCU_ADC0) and must never
+// be muxed to a digital function: no UART4 on P9_37/P9_38.
 #define DEFAULT_SERIAL0_PROTOCOL SerialProtocol_MAVLink2
 #define DEFAULT_SERIAL0_BAUD 115
 #define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_MAVLink2
