@@ -22,6 +22,8 @@ public:
     bool in_main_thread() const override;
     bool thread_create(AP_HAL::MemberProc proc, const char *name, uint32_t stack_size,
                        priority_base base, int8_t priority) override;
+    void expect_delay_ms(uint32_t ms) override;
+    bool in_expected_delay(void) const override;
     void *disable_interrupts_save() override;
     void restore_interrupts(void *state) override;
 
@@ -64,6 +66,16 @@ private:
     AP_HAL::Proc _failsafe;
     uint32_t     _failsafe_period_us;
     uint64_t     _last_failsafe_us;
+
+    // main-loop supervision (CONFIG_AP_HAL_ZEPHYR_MAIN_STUCK_MS), as
+    // AP_HAL_ChibiOS's monitor thread: tick() marks progress once per main
+    // loop, expect_delay_ms() announces a long operation of the main thread
+    void _check_main_stuck(uint32_t now_ms);
+    uint32_t _main_progress_ms;
+    uint32_t _expect_delay_start;   // ms, 0 = none
+    uint32_t _expect_delay_length;
+    uint32_t _expect_delay_nesting;
+    bool     _main_stuck;
 
     bool     _system_initialized;
     bool     _param_count_dirty;  // set by set_system_initialized(); tick() clears after 3 s

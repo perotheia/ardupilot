@@ -7,6 +7,50 @@
 #include <AP_HAL/AP_HAL.h>
 #include "HAL_Zephyr_Class.h"
 #include "CycleClock.h"
+#include "SafeState.h"
+
+#include <zephyr/fatal.h>
+#include <zephyr/sys/reboot.h>
+
+// LOG_PANIC() (flush deferred log messages) without log_ctrl.h, which does
+// not compile as C++; nothing to flush in minimal mode or without logging
+#if defined(CONFIG_LOG) && !defined(CONFIG_LOG_MODE_MINIMAL) && !defined(CONFIG_USERSPACE)
+extern "C" void z_impl_log_panic(void);
+#define AP_LOG_PANIC() z_impl_log_panic()
+#else
+#define AP_LOG_PANIC() ((void)0)
+#endif
+// kernel-internal header (kernel/include): declared here
+extern "C" FUNC_NORETURN void arch_system_halt(unsigned int reason);
+
+// The default safe-state hook: nothing (see SafeState.h for why it does not
+// call hal.rcout->force_safety_on()). Weak: a board overrides it.
+extern "C" __attribute__((weak)) void ap_hal_zephyr_outputs_safe(void)
+{
+}
+
+/*
+ * Zephyr fatal errors (CPU exceptions, kernel panics, k_oops, a failed stack
+ * sentinel): outputs safe first, then what the kernel's weak default does.
+ * Defined in this file because it is always linked (AP_HAL::get_HAL()): the
+ * linker would not pull a separate archive member only to replace the
+ * kernel's weak symbol.
+ */
+extern "C" void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
+{
+    ARG_UNUSED(esf);
+    ap_hal_zephyr_outputs_safe();
+    printk("AP_HAL_Zephyr: fatal error %u, outputs safe\n", reason);
+    AP_LOG_PANIC();
+#if defined(CONFIG_RESET_ON_FATAL_ERROR)
+    printk("Resetting system\n");
+    sys_reboot(SYS_REBOOT_WARM);
+#else
+    printk("Halting system\n");
+    arch_system_halt(reason);
+#endif
+    CODE_UNREACHABLE;
+}
 
 #ifdef CONFIG_AP_HAL_ZEPHYR_CYCLE_CLOCK
 /*
@@ -51,6 +95,9 @@ void panic(const char *errormsg, ...)
 {
     char buffer[256];
     va_list ap;
+
+    // before anything that can fault or block (the formatting, the console)
+    ap_hal_zephyr_outputs_safe();
 
     va_start(ap, errormsg);
     vsnprintf(buffer, sizeof(buffer), errormsg, ap);

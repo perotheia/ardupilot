@@ -99,6 +99,17 @@ config AP_HAL_ZEPHYR_IO_BELOW_MAIN
 	  get the time main blocks on I/O). Timer, RC in/out, CAN, SPI and
 	  I2C classes stay above main.
 
+config AP_HAL_ZEPHYR_MAIN_STUCK_MS
+	int "Outputs to the safe state when the main loop is stuck for N ms (0 = off)"
+	default 0
+	help
+	  The 1 kHz timer thread watches the main loop: no pass for more
+	  than N ms outside an announced delay (expect_delay_ms(), and all of
+	  setup()) calls ap_hal_zephyr_outputs_safe() (SafeState.h) once and
+	  prints a message. AP_HAL_ChibiOS declares main_loop_stuck at 500 ms.
+	  It does not catch a stuck timer thread or a dead core: that needs
+	  a hardware watchdog.
+
 config AP_HAL_ZEPHYR_MONITOR
 	bool "HAL monitor: periodic status lines on the console"
 	select THREAD_MONITOR

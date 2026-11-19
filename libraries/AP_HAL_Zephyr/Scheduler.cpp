@@ -1,6 +1,7 @@
 #include "Scheduler.h"
 #include "PeriodicCallback.h"
 #include "DelayCalc.h"
+#include "SafeState.h"
 
 #include <string.h>
 #include <zephyr/drivers/gpio.h>
@@ -8,6 +9,8 @@
 #include <zephyr/devicetree.h>
 
 using namespace Zephyr;
+
+extern const AP_HAL::HAL &hal;
 
 // K_THREAD_STACK_DEFINE needs integer literals; keep in sync with Scheduler.h.
 K_THREAD_STACK_DEFINE(scheduler_timer_stack, 4096);
@@ -114,6 +117,11 @@ Scheduler::Scheduler() :
     _failsafe(nullptr),
     _failsafe_period_us(0),
     _last_failsafe_us(0),
+    _main_progress_ms(0),
+    _expect_delay_start(0),
+    _expect_delay_length(0),
+    _expect_delay_nesting(0),
+    _main_stuck(false),
     _system_initialized(false),
     _param_count_dirty(false),
     _init_ms(0),
@@ -233,6 +241,7 @@ void Scheduler::set_system_initialized()
     _init_ms = k_uptime_get_32();
     _param_count_dirty = true;
 
+    _main_progress_ms = AP_HAL::millis();
     _system_initialized = true;
 
 #ifdef AP_MAV_DEFAULT_STREAM_RATE_PARAMS
@@ -351,6 +360,9 @@ void Scheduler::set_arguments(int argc, char *const *argv)
 
 void Scheduler::tick()
 {
+    // once per main loop: the progress mark of the stuck-main check
+    _main_progress_ms = AP_HAL::millis();
+
     if (_param_count_dirty) {
         if (k_uptime_get_32() - _init_ms < 3000U) {
             AP_Param::invalidate_count();
@@ -373,12 +385,108 @@ void Scheduler::_run_timer_procs()
     // at least once per wrap period, see system.cpp).
     const uint64_t now = AP_HAL::micros64();
 
+#if CONFIG_AP_HAL_ZEPHYR_MAIN_STUCK_MS > 0
+    _check_main_stuck((uint32_t)(now / 1000U));
+#endif
+
     if (_failsafe != nullptr && _failsafe_period_us != 0) {
         if ((now - _last_failsafe_us) >= _failsafe_period_us) {
             _last_failsafe_us = now;
             _failsafe();
         }
     }
+}
+
+/*
+  Timer thread, every pass: the main loop is "stuck" when it has not come
+  round (tick(), once per HAL main loop = once per AP_Scheduler loop) for
+  more than CONFIG_AP_HAL_ZEPHYR_MAIN_STUCK_MS outside an expected delay.
+  Then the outputs are put into the safe state, once per episode; a main loop
+  that comes back is reported, and what the safe state latched stays latched
+  (SafeState.h). Not armed before set_system_initialized(): setup() is one
+  long expected delay, as in AP_HAL_ChibiOS.
+ */
+void Scheduler::_check_main_stuck(uint32_t now_ms)
+{
+#if CONFIG_AP_HAL_ZEPHYR_MAIN_STUCK_MS > 0
+    if (!_system_initialized) {
+        return;
+    }
+    if (in_expected_delay()) {
+        // as the ChibiOS timer thread pats the watchdog during an expected
+        // delay: the stuck time counts from its end
+        _main_progress_ms = now_ms;
+        return;
+    }
+    const uint32_t stalled_ms = now_ms - _main_progress_ms;
+    if (stalled_ms > CONFIG_AP_HAL_ZEPHYR_MAIN_STUCK_MS) {
+        if (!_main_stuck) {
+            _main_stuck = true;
+            ap_hal_zephyr_outputs_safe();
+            printk("AP_HAL_Zephyr: main loop stuck for %u ms (task %d): outputs safe\n",
+                   (unsigned)stalled_ms, (int)hal.util->persistent_data.scheduler_task);
+        }
+    } else if (_main_stuck) {
+        _main_stuck = false;
+        printk("AP_HAL_Zephyr: main loop running again\n");
+    }
+#else
+    (void)now_ms;
+#endif
+}
+
+/*
+  The main thread announces an operation that keeps it from its loop for up
+  to ms (0 ends the innermost announcement), the semantics of
+  AP_HAL_ChibiOS: nested calls count, a running announcement is extended,
+  never shortened. Read by the timer thread, which preempts this one: the
+  three words change under irq_lock().
+ */
+void Scheduler::expect_delay_ms(uint32_t ms)
+{
+    if (!in_main_thread()) {
+        // only for main thread
+        return;
+    }
+    const uint32_t now = AP_HAL::millis();
+    const unsigned int key = irq_lock();
+
+    _main_progress_ms = now;
+    if (ms == 0) {
+        if (_expect_delay_nesting > 0) {
+            _expect_delay_nesting--;
+        }
+        if (_expect_delay_nesting == 0) {
+            _expect_delay_start = 0;
+        }
+    } else {
+        if (_expect_delay_start != 0) {
+            // we already have a delay running, possibly extend it
+            const uint32_t done = now - _expect_delay_start;
+            if (_expect_delay_length > done) {
+                ms = MAX(ms, _expect_delay_length - done);
+            }
+        }
+        // 0 means "none": a start in the one millisecond where millis() is 0
+        // (boot, or the wrap after 49.7 days) is moved by 1 ms
+        _expect_delay_start = now != 0 ? now : 1;
+        _expect_delay_length = ms;
+        _expect_delay_nesting++;
+    }
+    irq_unlock(key);
+}
+
+bool Scheduler::in_expected_delay(void) const
+{
+    if (!_system_initialized) {
+        // until setup() is complete we expect delays
+        return true;
+    }
+    const unsigned int key = irq_lock();
+    const uint32_t start = _expect_delay_start;
+    const uint32_t length = _expect_delay_length;
+    irq_unlock(key);
+    return start != 0 && AP_HAL::millis() - start <= length;
 }
 
 void Scheduler::_run_io_procs()
