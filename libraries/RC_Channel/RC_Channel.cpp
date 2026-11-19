@@ -304,7 +304,11 @@ bool RC_Channel::get_reverse(void) const
 bool RC_Channel::update(void)
 {
     raw_radio_in = hal.rcin->read(ch_in);
-    if (has_override() && !rc().option_is_enabled(RC_Channels::Option::IGNORE_OVERRIDES)) {
+    if (hal.rcin->priority_source_owns(ch_in)) {
+        // a local priority source (e.g. a grip-enabled joystick) owns this channel: neither overrides
+        // nor RC_OPTIONS IGNORE_RECEIVER apply to it
+        radio_in = raw_radio_in;
+    } else if (has_override() && !rc().option_is_enabled(RC_Channels::Option::IGNORE_OVERRIDES)) {
         radio_in = override_value;
     } else if (rc().has_had_rc_receiver() && !rc().option_is_enabled(RC_Channels::Option::IGNORE_RECEIVER)) {
         radio_in = raw_radio_in;

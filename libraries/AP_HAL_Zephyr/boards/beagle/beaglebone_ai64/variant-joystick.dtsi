@@ -1,0 +1,26 @@
+/*
+ * Build variant "joystick" (setup/ardupilot-ai64.sh VARIANT=joystick, combinable): the force joystick (wc-hardware
+ * docs/JOYSTICK-FRAME.md v1) on main_uart1 (P8_17 RX / P8_18 TX, 115200 8N1; direct VIM line 159, no interrupt
+ * router) with the grip enable on P8_26 (GPIO2 bank 1 pin 19 = the pad of GPIO0_51). Linux must leave main_uart1
+ * and GPIO0_51 alone (ai64-r5f-joystick.dtso).
+ */
+&uart1 {
+	pinctrl-0 = <&uart1_default>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+&main_gpio2_1 {
+	pinctrl-0 = <&joy_enable_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+/ {
+	force_joystick: force-joystick {
+		compatible = "ardupilot,force-joystick";
+		uart = <&uart1>;
+		enable-gpios = <&main_gpio2_1 19 GPIO_ACTIVE_HIGH>;
+	};
+};

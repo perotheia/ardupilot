@@ -147,6 +147,40 @@ void RCInput::_timer_tick()
     irq_unlock(key);
 }
 
+void RCInput::set_priority_input(uint8_t ch_a, uint16_t val_a, uint16_t neutral_a, uint8_t ch_b, uint16_t val_b,
+                                 uint16_t neutral_b, bool active)
+{
+    unsigned int key = irq_lock();
+    _prio_ch[0] = ch_a;
+    _prio_ch[1] = ch_b;
+    _prio_val[0] = val_a;
+    _prio_val[1] = val_b;
+    _prio_neutral[0] = neutral_a;
+    _prio_neutral[1] = neutral_b;
+    _prio_ms = AP_HAL::millis();
+    _prio_active = active && ch_a < MAX_CH && ch_b < MAX_CH;
+    if (_prio_active) {
+        _prio_new = true;
+    }
+    irq_unlock(key);
+}
+
+bool RCInput::priority_source_new_input()
+{
+    if (!_prio_new) {
+        return false;
+    }
+    unsigned int key = irq_lock();
+    _prio_new = false;
+    irq_unlock(key);
+    return true;
+}
+
+bool RCInput::priority_source_owns(uint8_t ch)
+{
+    return _prio_active && (ch == _prio_ch[0] || ch == _prio_ch[1]);
+}
+
 bool RCInput::new_input()
 {
     if (!_new_input) {
@@ -160,29 +194,35 @@ bool RCInput::new_input()
 
 uint8_t RCInput::num_channels()
 {
-    return _num_channels;
+    uint8_t n = _num_channels;
+    if (_prio_active) {
+        n = std::max<uint8_t>(n, (uint8_t)(std::max(_prio_ch[0], _prio_ch[1]) + 1u));
+    }
+    return n;
 }
 
 uint16_t RCInput::read(uint8_t ch)
 {
-    if (ch >= _num_channels) {
-        return 1500u;
-    }
     unsigned int key = irq_lock();
-    const uint16_t val = _values[ch];
+    uint16_t val = 1500u;
+    const bool prio_fresh = (AP_HAL::millis() - _prio_ms) <= PRIO_STALE_MS;
+    if (_prio_active && ch == _prio_ch[0]) {
+        val = prio_fresh ? _prio_val[0] : _prio_neutral[0];
+    } else if (_prio_active && ch == _prio_ch[1]) {
+        val = prio_fresh ? _prio_val[1] : _prio_neutral[1];
+    } else if (ch < _num_channels) {
+        val = _values[ch];
+    }
     irq_unlock(key);
     return val;
 }
 
 uint8_t RCInput::read(uint16_t *periods, uint8_t len)
 {
-    const uint8_t count = std::min<uint8_t>(len, _num_channels);
-    if (count == 0u) {
-        return 0u;
+    const uint8_t count = std::min<uint8_t>(len, num_channels());
+    for (uint8_t i = 0; i < count; i++) {
+        periods[i] = read(i);
     }
-    unsigned int key = irq_lock();
-    memcpy(periods, _values, count * sizeof(uint16_t));
-    irq_unlock(key);
     return count;
 }
 

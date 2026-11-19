@@ -23,6 +23,9 @@
 
 #include "MotorBridge.h"
 #include "motor_bridge.h"
+#ifdef CONFIG_AP_HAL_ZEPHYR_FORCE_JOYSTICK
+#include "Joystick.h"
+#endif
 
 extern const AP_HAL::HAL &hal;
 
@@ -278,6 +281,12 @@ void Process::tick()
     in.last_cmd_ms[1] = last_cmd_ms[1];
     in.cmd[0] = cmd[0];
     in.cmd[1] = cmd[1];
+#ifdef CONFIG_AP_HAL_ZEPHYR_FORCE_JOYSTICK
+    /* the joystick owns the chair without driving (grip released, stale, remote stop): 0 here, not later */
+    if (Zephyr::Joystick::motor_neutral()) {
+        in.cmd[0] = in.cmd[1] = 0;
+    }
+#endif
     in.sensors_ok = sm.ms != 0 && (uint32_t)(now - sm.ms) <= SENSOR_MAX_AGE_MS;
     if (in.sensors_ok) {
         for (uint8_t i = 0; i < 4; i++) {

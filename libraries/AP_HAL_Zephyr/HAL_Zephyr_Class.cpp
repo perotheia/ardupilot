@@ -16,6 +16,9 @@
 
 using namespace Zephyr;
 
+#if defined(CONFIG_AP_HAL_ZEPHYR_FORCE_JOYSTICK)
+#include "Joystick.h"
+#endif
 #if defined(CONFIG_AP_HAL_ZEPHYR_MONITOR)
 void ap_hal_zephyr_monitor_start(void);
 void ap_hal_zephyr_monitor_main_service(void);
@@ -143,10 +146,16 @@ void HAL_Zephyr::run(int argc, char *const argv[], Callbacks *callbacks) const
     callbacks->setup();
 
     scheduler->set_system_initialized();
+#if defined(CONFIG_AP_HAL_ZEPHYR_FORCE_JOYSTICK)
+    Zephyr::Joystick::init();
+#endif
 
     for (;;) {
         schedulerInstance.tick();
         callbacks->loop();
+#if defined(CONFIG_AP_HAL_ZEPHYR_FORCE_JOYSTICK)
+        Zephyr::Joystick::main_service();
+#endif
 #if defined(CONFIG_AP_HAL_ZEPHYR_MONITOR)
         // what the monitor thread must not do itself (allocate, reset the
         // loop statistics, format the task table) is done here on request

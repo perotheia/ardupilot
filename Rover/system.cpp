@@ -249,11 +249,30 @@ uint32_t Rover::get_available_mode_enabled_mask() const
 }
 
 
+/*
+  board veto on mode changes (e.g. a grip-enabled joystick that only lets
+  a stop through while it drives); the default allows everything
+ */
+extern "C" __attribute__((weak)) bool ap_board_mode_change_allowed(uint8_t new_mode, uint8_t reason)
+{
+    (void)new_mode;
+    (void)reason;
+    return true;
+}
+
 bool Rover::set_mode(Mode &new_mode, ModeReason reason)
 {
+    // asked first: the board also learns of requests for the current mode (a HOLD while in HOLD is still a stop)
+    const bool board_allows = ap_board_mode_change_allowed((uint8_t)new_mode.mode_number(), (uint8_t)reason);
+
     if (control_mode == &new_mode) {
         // don't switch modes if we are already in the correct mode.
         return true;
+    }
+
+    if (!board_allows) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Mode change to %s refused: local control active (only a stop is accepted)", new_mode.name());
+        return false;
     }
 
     // Check if GCS mode change is disabled via parameter

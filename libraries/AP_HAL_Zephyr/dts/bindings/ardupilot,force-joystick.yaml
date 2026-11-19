@@ -1,0 +1,15 @@
+description: |
+  Force joystick (ESP32-C3 + 2 HX711, wc-hardware docs/JOYSTICK-FRAME.md v1) on a UART, with a hard-wired grip
+  enable line, read by AP_HAL_Zephyr's joystick source (CONFIG_AP_HAL_ZEPHYR_FORCE_JOYSTICK).
+
+compatible: "ardupilot,force-joystick"
+
+properties:
+  uart:
+    type: phandle
+    required: true
+    description: the UART the stick's frames arrive on (115200 8N1)
+  enable-gpios:
+    type: phandle-array
+    required: true
+    description: grip enable (active = grip held)

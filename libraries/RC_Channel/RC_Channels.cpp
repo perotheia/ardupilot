@@ -88,10 +88,18 @@ uint8_t RC_Channels::get_radio_in(uint16_t *chans, const uint8_t num_channels)
 // update all the input channels
 bool RC_Channels::read_input(void)
 {
+    const bool prio_new = hal.rcin->priority_source_new_input();
     if (hal.rcin->new_input() &&
         !rc().option_is_enabled(RC_Channels::Option::IGNORE_RECEIVER)) {
         _has_had_rc_receiver = true;
     } else if (!has_new_overrides) {
+        if (prio_new) {
+            // only a local priority source has new values: update the channels, but this is no radio
+            // input (the radio failsafe keeps seeing the radio alone)
+            for (uint8_t i=0; i<NUM_RC_CHANNELS; i++) {
+                channel(i)->update();
+            }
+        }
         return false;
     }
 
@@ -121,6 +129,10 @@ bool RC_Channels::read_input(void)
 
 bool RC_Channels::should_ignore_overrides(void)
 {
+    // a local priority source moving its own channels is not pilot input against the overrides
+    if (hal.rcin->priority_source_active()) {
+        return false;
+    }
     if (!rc().option_is_enabled(Option::CLEAR_OVERRIDES_BY_RC) || !has_active_overrides()) {
         return false;
     }

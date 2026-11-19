@@ -242,6 +242,13 @@ config AP_HAL_ZEPHYR_AI64_CAM_IMU_ADDR
 	default 30
 	depends on AP_HAL_ZEPHYR_AI64_CAM_IMU
 
+config AP_HAL_ZEPHYR_FORCE_JOYSTICK
+	bool "Force joystick as a priority RC source (ardupilot,force-joystick node)"
+	depends on SERIAL && UART_INTERRUPT_DRIVEN && GPIO && AP_HAL_ZEPHYR_MOTOR_BRIDGE
+	help
+	  wc-hardware docs/JOYSTICK-FRAME.md v1: frames on a UART + a hard-wired
+	  grip line; joy_arb.c decides (stop always wins, no automatic resume).
+
 config AP_HAL_ZEPHYR_MONITOR
 	bool "HAL monitor: periodic status lines on the console"
 	select THREAD_MONITOR

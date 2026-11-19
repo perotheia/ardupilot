@@ -35,3 +35,7 @@ MAV2_EXTRA3 1
 MAV2_RAW_CTRL 0
 MAV2_PARAMS 0
 MAV2_ADSB 0
+
+# no stick arming/disarming (a full-left pivot at zero throttle from the joystick or a radio must not disarm, a
+# full-right one must not arm): arm from the radio switch or a GCS
+ARMING_RUDDER 0

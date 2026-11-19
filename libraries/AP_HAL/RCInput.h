@@ -34,6 +34,12 @@ public:
 
     /* get receiver based RSSI if available. -1 for unknown, 0 for no link, 255 for maximum link */
     virtual int16_t get_rssi(void) { return -1; }
+    /* a local input with priority (e.g. a grip-enabled joystick) owns input channel ch (0-based) now:
+       MAVLink RC overrides are not applied to that channel; other channels are untouched */
+    virtual bool priority_source_owns(uint8_t ch) { (void)ch; return false; }
+    virtual bool priority_source_active(void) { return false; }
+    /* the priority source has new values (latches); unlike new_input() this is no radio input */
+    virtual bool priority_source_new_input(void) { return false; }
     virtual int16_t get_rx_link_quality(void) { return -1; }
     /* Return string describing method RC input protocol */
     virtual const char *protocol() const { return nullptr; }
