@@ -1,6 +1,7 @@
 /*
  * OpenAMP RPMsg "remote" bring-up for AP_HAL_Zephyr (Linux master <-> Zephyr
- * remote over the Microchip Mi-V IHC). Runs as its own thread so the
+ * remote over an IPM mailbox: the Microchip Mi-V IHC, or the TI OMAP mailbox
+ * of K3 SoCs with Linux k3_r5_remoteproc). Runs as its own thread so the
  * blocking master handshake never stalls ArduPilot boot.
  *
  * SPDX-License-Identifier: (GPL-2.0 OR MIT)
@@ -22,7 +23,7 @@
 LOG_MODULE_REGISTER(ap_rpmsg, LOG_LEVEL_INF);
 
 #if !DT_HAS_CHOSEN(zephyr_ipc)
-#error "rpmsg_remote.c needs chosen zephyr,ipc (the IHC IPM channel)"
+#error "rpmsg_remote.c needs chosen zephyr,ipc (the IPM mailbox channel)"
 #endif
 #if !DT_HAS_CHOSEN(zephyr_ipc_shm)
 #error "rpmsg_remote.c needs chosen zephyr,ipc_shm (rpmsg shared buffer pool)"
@@ -78,6 +79,16 @@ static uint32_t rpmsg_rx_dropped;
 
 static K_SEM_DEFINE(data_sem, 0, 1);
 
+/* Board hook for remoteproc control messages carried on the mailbox (e.g. the
+ * TI K3 RP_MBOX_SHUTDOWN request); ISR context. Default: none. */
+__weak void ap_rpmsg_board_ipm_msg(const struct device *dev, uint32_t id,
+				   volatile void *data)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(id);
+	ARG_UNUSED(data);
+}
+
 static K_THREAD_STACK_DEFINE(rpmsg_mng_stack, RPMSG_THREAD_STACK_SIZE);
 static struct k_thread rpmsg_mng_thread;
 
@@ -85,9 +96,8 @@ static struct k_thread rpmsg_mng_thread;
 static void platform_ipm_callback(const struct device *dev, void *context,
 				  uint32_t id, volatile void *data)
 {
-	ARG_UNUSED(dev);
 	ARG_UNUSED(context);
-	ARG_UNUSED(id);
+	ap_rpmsg_board_ipm_msg(dev, id, data);
 	k_sem_give(&data_sem);
 }
 
@@ -111,6 +121,7 @@ static int mailbox_notify(void *priv, uint32_t id)
 	return 0;
 }
 
+#if defined(CONFIG_IPM_MCHP_IHC)
 extern void mchp_ihc_dbg_dump(const struct device *dev);
 
 static int platform_rproc_ready(void)
@@ -133,6 +144,14 @@ static int platform_rproc_ready(void)
 	LOG_ERR("rpmsg: no master kick within timeout; link disabled");
 	return -1;
 }
+#else
+/* Other masters (TI k3_r5_remoteproc) need no ready handshake: the vdev status
+ * in the resource table says when the vrings are set up. */
+static int platform_rproc_ready(void)
+{
+	return 0;
+}
+#endif
 
 static int platform_init(void)
 {
@@ -156,7 +175,7 @@ static int platform_init(void)
 	metal_io_init(rsc_io, rsc_table, &rsc_tab_physmap, rsc_size, -1, 0, NULL);
 
 	if (!device_is_ready(ipm_handle)) {
-		LOG_ERR("IHC IPM device not ready");
+		LOG_ERR("IPM device not ready");
 		return -1;
 	}
 	ipm_register_callback(ipm_handle, platform_ipm_callback, NULL);

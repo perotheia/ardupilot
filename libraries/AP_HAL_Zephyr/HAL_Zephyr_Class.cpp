@@ -18,14 +18,24 @@ using namespace Zephyr;
 
 // ports above 4 fall back to Empty::UARTDriver so HAL_ZEPHYR_NUM_SERIAL_PORTS
 // can be tuned down per-board without leaving dangling instances.
+// HAL_ZEPHYR_RPMSG_SERIAL_PORT picks the SERIALn the rpmsg-tty bridge backs:
+// 5 (default, AP_DDS on BeagleV-Fire) or 0 (MAVLink to the Linux host when
+// there is no wired GCS link, e.g. the BeagleBone AI-64 R5F).
+#ifndef HAL_ZEPHYR_RPMSG_SERIAL_PORT
+#define HAL_ZEPHYR_RPMSG_SERIAL_PORT 5
+#endif
+#if HAL_ZEPHYR_RPMSG_SERIAL_ENABLED && HAL_ZEPHYR_RPMSG_SERIAL_PORT == 0
+static RPMsgUARTDriver serial0Driver;
+#else
 static UARTDriver serial0Driver(0);
+#endif
 static UARTDriver serial1Driver(1);
 static UARTDriver serial2Driver(2);
 static UARTDriver serial3Driver(3);
 static UARTDriver serial4Driver(4);
 
 #if HAL_ZEPHYR_NUM_SERIAL_PORTS > 5
-#if HAL_ZEPHYR_RPMSG_SERIAL_ENABLED
+#if HAL_ZEPHYR_RPMSG_SERIAL_ENABLED && HAL_ZEPHYR_RPMSG_SERIAL_PORT == 5
 static RPMsgUARTDriver serial5Driver;
 #else
 static UARTDriver serial5Driver(5);
