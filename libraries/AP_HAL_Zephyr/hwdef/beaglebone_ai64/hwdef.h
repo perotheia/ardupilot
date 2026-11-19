@@ -42,7 +42,7 @@
 // parameter defaults: the embedded region of AP_Param, filled after the link
 // from hwdef/beaglebone_ai64/defaults.parm by Tools/scripts/apj_tool.py (and
 // changeable on a binary without rebuilding: apj_tool.py zephyr.elf --set ...)
-#define AP_PARAM_MAX_EMBEDDED_PARAM 1024
+#define AP_PARAM_MAX_EMBEDDED_PARAM 2048
 
 // RC from an ExpressLRS receiver in MAVLink mode (RADIO_RC_CHANNELS). The
 // default gate (backends enabled, HAL_PROGRAM_SIZE_LIMIT_KB > 1024, GCS) is

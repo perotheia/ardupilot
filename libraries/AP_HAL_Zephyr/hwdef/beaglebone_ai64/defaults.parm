@@ -21,3 +21,17 @@ MOT_PWM_TYPE 0
 # link loss: hold the last stick at most ~0.5 s before Rover's failsafe (HOLD)
 RC_FS_TIMEOUT 0.5
 FS_TIMEOUT 0.5
+# ExpressLRS in MAVLink mode on SERIAL1 (UART8, the 2nd MAVLink link = MAV2_*): RC arrives as overrides from
+# the receiver (source sysid 255 = SYSID_MYGCS default); drop them after 0.5 s
+RC_OVERRIDE_TIME 0.5
+RSSI_TYPE 5
+MAV2_RAW_SENS 1
+MAV2_EXT_STAT 1
+MAV2_RC_CHAN 1
+MAV2_POSITION 1
+MAV2_EXTRA1 1
+MAV2_EXTRA2 1
+MAV2_EXTRA3 1
+MAV2_RAW_CTRL 0
+MAV2_PARAMS 0
+MAV2_ADSB 0
