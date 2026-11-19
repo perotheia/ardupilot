@@ -54,7 +54,8 @@
 };
 
 &uart8 {
-	pinctrl-0 = <&uart8_default>;
+	/* with the analog-only header pins held Hi-Z (see the note above) */
+	pinctrl-0 = <&uart8_default &analog_pins_hiz>;
 	pinctrl-names = "default";
 	current-speed = <460800>;
 	status = "okay";
