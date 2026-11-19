@@ -1,3 +1,7 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/adc/adc.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+
 /*
  * BeagleBone AI-64, ArduPilot on MAIN R5FSS1 core0 (Zephyr 'ai64' branch,
  * lockstep) beside Linux + TI vision_apps (rebuilt without mcu3).
@@ -66,4 +70,52 @@
 	pinctrl-names = "default";
 	current-speed = <38400>;
 	status = "okay";
+};
+
+/*
+ * Motor bridge (2x BTS7960, prototype pin table wc-hardware docs/pin-allocation.md), CONFIG_AP_HAL_ZEPHYR_MOTOR_BRIDGE:
+ *   PWM_L_FWD EHRPWM0_A P8_19, PWM_L_REV EHRPWM0_B P8_13, PWM_R_FWD EHRPWM4_B P9_25, PWM_R_REV EHRPWM5_A P8_37
+ *   GPIO2 (pads of GPIO0_n, VGPIO_SEL = GPIO2): EN_L P8_07 (15), EN_R P8_08 (14), BRAKE_L P8_09 (17, high =
+ *   released), BRAKE_R P8_10 (16), DRV_ARM P8_14 (75, square wave into the dead-man monostable), ESTOP_SENSE
+ *   P8_12 (59, high = e-stop open)
+ *   MCU_ADC0 (1.8 V at the ball, the header is halved): IS_L_FWD AIN0 P9_39, IS_L_REV AIN1 P9_40, IS_R_FWD AIN4
+ *   P9_33, IS_R_REV AIN5 P9_36, VMOT_SENSE AIN2 P9_37, VBAT_SENSE AIN6 P9_35 (both for the over-voltage gate; VBAT also for the battery monitor, later)
+ *   Current scale: 11.6 mV/A at the ball (IBT-2 with 10k IS resistors; 6.3 mV/A with 1k): to be calibrated.
+ *   Bus scale: 56 V per volt at the ball.
+ */
+&main_ctrl_mmr0 { status = "okay"; };
+&ehrpwm0 { pinctrl-0 = <&ehrpwm0_default>; pinctrl-names = "default"; status = "okay"; };
+&ehrpwm4 { pinctrl-0 = <&ehrpwm4_default>; pinctrl-names = "default"; status = "okay"; };
+&ehrpwm5 { pinctrl-0 = <&ehrpwm5_default>; pinctrl-names = "default"; status = "okay"; };
+&main_gpio2_0 { pinctrl-0 = <&motor_gpio_default>; pinctrl-names = "default"; status = "okay"; };
+&main_gpio2_1 { status = "okay"; };
+&main_gpio2_2 { status = "okay"; };
+
+#define AI64_ADC_CH(n) channel@n { reg = <n>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; \
+	zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <12>; }
+
+&mcu_adc0 {
+	status = "okay";
+	AI64_ADC_CH(0);
+	AI64_ADC_CH(1);
+	AI64_ADC_CH(2);
+	AI64_ADC_CH(4);
+	AI64_ADC_CH(5);
+	AI64_ADC_CH(6);
+};
+
+/ {
+	motor_bridge: motor-bridge {
+		compatible = "ardupilot,motor-bridge";
+		pwms = <&ehrpwm0 0 PWM_USEC(50) PWM_POLARITY_NORMAL>, <&ehrpwm0 1 PWM_USEC(50) PWM_POLARITY_NORMAL>,
+		       <&ehrpwm4 1 PWM_USEC(50) PWM_POLARITY_NORMAL>, <&ehrpwm5 0 PWM_USEC(50) PWM_POLARITY_NORMAL>;
+		enable-gpios = <&main_gpio2_0 15 GPIO_ACTIVE_HIGH>, <&main_gpio2_0 14 GPIO_ACTIVE_HIGH>;
+		brake-gpios = <&main_gpio2_0 17 GPIO_ACTIVE_HIGH>, <&main_gpio2_0 16 GPIO_ACTIVE_HIGH>;
+		drv-arm-gpios = <&main_gpio2_2 11 GPIO_ACTIVE_HIGH>;
+		estop-gpios = <&main_gpio2_1 27 GPIO_ACTIVE_HIGH>;
+		io-channels = <&mcu_adc0 0>, <&mcu_adc0 1>, <&mcu_adc0 4>, <&mcu_adc0 5>, <&mcu_adc0 2>, <&mcu_adc0 6>;
+		servo-channels = <0 2>;
+		is-ma-per-mv = <86207 86207 86207 86207>;
+		vmot-mv-per-mv = <56>;
+	};
 };

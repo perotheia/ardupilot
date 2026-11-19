@@ -2,8 +2,19 @@
 # Rover's scheduler default is 50 Hz; the 400 Hz variant is the same ELF with
 # apj_tool.py <elf> --set SCHED_LOOP_RATE=400
 SCHED_LOOP_RATE 50
-# no compass on this vehicle: yaw from the GSF (GPS velocity while moving),
-# height from GPS (no baro fitted)
+# FALLBACK set until the I2C compass is fitted: no compass, yaw from the GSF
+# (GPS velocity while moving), height from GPS (no baro fitted)
 COMPASS_ENABLE 0
 EK3_SRC1_YAW 8
 EK3_SRC1_POSZ 3
+# skid steering on the motor bridge layer (HAL): left = SERVO1, right = SERVO3,
+# 1000..2000 us with 1500 = stop; the HAL ramps, brakes and limits
+SERVO1_FUNCTION 73
+SERVO1_MIN 1000
+SERVO1_TRIM 1500
+SERVO1_MAX 2000
+SERVO3_FUNCTION 74
+SERVO3_MIN 1000
+SERVO3_TRIM 1500
+SERVO3_MAX 2000
+MOT_PWM_TYPE 0

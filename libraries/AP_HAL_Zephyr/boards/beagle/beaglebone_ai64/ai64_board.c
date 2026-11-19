@@ -49,8 +49,12 @@
  * nothing. The forced-low and input states persist until a driver
  * re-initialises the peripherals: the state is latched, as it must be.
  */
+void ap_motor_bridge_latch_hard(void);
+
 void ap_hal_zephyr_outputs_safe(void)
 {
+	/* the motor layer must not drive again until the vehicle disarms */
+	ap_motor_bridge_latch_hard();
 #define AI64_PWM_OFF(label)                                                      \
 	IF_ENABLED(DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(label)),                 \
 		   (sys_write16(0x00c0u, DT_REG_ADDR(DT_NODELABEL(label)) + 0x1au); \
