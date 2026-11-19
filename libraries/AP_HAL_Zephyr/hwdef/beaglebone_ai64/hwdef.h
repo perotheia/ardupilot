@@ -44,8 +44,10 @@
 // changeable on a binary without rebuilding: apj_tool.py zephyr.elf --set ...)
 #define AP_PARAM_MAX_EMBEDDED_PARAM 1024
 
-// RC from an ExpressLRS receiver in MAVLink mode (RADIO_RC_CHANNELS); its
-// default gate wants a > 1 MB program-size limit, which this HAL does not set
+// RC from an ExpressLRS receiver in MAVLink mode (RADIO_RC_CHANNELS). The
+// default gate (backends enabled, HAL_PROGRAM_SIZE_LIMIT_KB > 1024, GCS) is
+// already true here (AP_HAL/board/zephyr.h sets the limit to 4096 KB): the
+// define is redundant and kept explicit, because this board's RC depends on it
 #define AP_RCPROTOCOL_MAVLINK_RADIO_ENABLED 1
 #define AP_GPS_UBLOX_ENABLED 1
 
