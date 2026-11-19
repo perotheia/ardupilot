@@ -44,6 +44,11 @@
 // changeable on a binary without rebuilding: apj_tool.py zephyr.elf --set ...)
 #define AP_PARAM_MAX_EMBEDDED_PARAM 1024
 
+// RC from an ExpressLRS receiver in MAVLink mode (RADIO_RC_CHANNELS); its
+// default gate wants a > 1 MB program-size limit, which this HAL does not set
+#define AP_RCPROTOCOL_MAVLINK_RADIO_ENABLED 1
+#define AP_GPS_UBLOX_ENABLED 1
+
 // features without backing yet on this board
 #define HAL_MOUNT_ENABLED 0
 #define AP_WINCH_ENABLED 0
@@ -68,12 +73,16 @@
 #undef ARRAY_SIZE
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
 
-// Serial map (milestone 1):
+// Serial map:
 //   SERIAL0 = rpmsg-tty  MAVLink2 to Linux (/dev/ttyRPMSGn), baud ignored
-// later: GPS on UART6 (P9_14/P9_16), CRSF on UART4 (P9_37/P9_38)
+//   SERIAL1 = UART4      ExpressLRS in MAVLink mode (RC + telemetry), 460800
+//   SERIAL3 = UART6      u-blox GPS (autobaud; 38400 to start)
 #define DEFAULT_SERIAL0_PROTOCOL SerialProtocol_MAVLink2
-
 #define DEFAULT_SERIAL0_BAUD 115
+#define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_MAVLink2
+#define DEFAULT_SERIAL1_BAUD 460
+#define DEFAULT_SERIAL3_PROTOCOL SerialProtocol_GPS
+#define DEFAULT_SERIAL3_BAUD 38
 
 // sensors: after the feature gates and the AP_Math dance (MockINS.h pulls the
 // AP_InertialSensor config chain, which defaults every gate it meets)

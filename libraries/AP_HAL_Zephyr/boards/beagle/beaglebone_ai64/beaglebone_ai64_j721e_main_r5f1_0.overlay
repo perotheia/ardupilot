@@ -10,12 +10,24 @@
  * DRAM (code, data, newlib heap): 8 MB at 0xa6800000. Milestone 1 fits; a
  * bigger carveout replaces ddr1 once it is in the Linux overlay.
  *
- * SERIAL0 = MAVLink2 over the RPMsg "rpmsg-tty" endpoint (/dev/ttyRPMSGn on
- * Linux, module rpmsg_tty); no UART is needed for milestone 1.
+ * Serial ports:
+ *   SERIAL0 = MAVLink2 over the RPMsg "rpmsg-tty" endpoint (/dev/ttyRPMSGn on
+ *             Linux, module rpmsg_tty)
+ *   SERIAL1 = UART4, P9_37 RX / P9_38 TX: ExpressLRS receiver in MAVLink mode
+ *             (RC in RADIO_RC_CHANNELS + telemetry), 460800 baud
+ *   SERIAL3 = UART6, P9_14 RX / P9_16 TX: u-blox GPS (the driver autobauds)
+ * UART4/UART6 interrupts reach this core through R5FSS1_INTROUTER0 (routed by
+ * the SoC code from ti,sci-ir-route, Zephyr 'ai64' branch); 48 MHz fck, the
+ * ns16550 TI K3 code picks 13x/16x per baud (460800: 13x, +0.16 %).
  */
 / {
 	chosen {
 		zephyr,ram-console = &ramcon;
+	};
+
+	aliases {
+		ardupilot-serial1 = &uart4;
+		ardupilot-serial3 = &uart6;
 	};
 
 	ramcon: memory@a6180000 {
@@ -35,4 +47,18 @@
 
 &ddr1 {
 	reg = <0xa6800000 DT_SIZE_M(8)>;
+};
+
+&uart4 {
+	pinctrl-0 = <&uart4_default>;
+	pinctrl-names = "default";
+	current-speed = <460800>;
+	status = "okay";
+};
+
+&uart6 {
+	pinctrl-0 = <&uart6_default>;
+	pinctrl-names = "default";
+	current-speed = <38400>;
+	status = "okay";
 };
