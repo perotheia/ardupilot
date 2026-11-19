@@ -10,7 +10,13 @@
  *   cpu <thread>=<% of the period> ...
  *
  * and every AP_HAL_ZEPHYR_MONITOR_TASKS_EVERY lines the scheduler task table
- * (the @SYS/tasks.txt text; the first call only enables task recording).
+ * (the @SYS/tasks.txt text). loops/max/avg/long and the table cover the time
+ * since the previous table.
+ *
+ * Without logging (HAL_LOGGING_ENABLED 0) the vehicle never runs
+ * AP_Scheduler::update_logging(), which allocates the per-task statistics
+ * and resets perf_info: the monitor does both. The task-info array is sized
+ * for 255 tasks (perf_info bounds-checks every index; ~6 KiB).
  */
 #include <AP_HAL/AP_HAL.h>
 #if CONFIG_HAL_BOARD == HAL_BOARD_ZEPHYR && defined(CONFIG_AP_HAL_ZEPHYR_MONITOR)
@@ -110,6 +116,9 @@ void mon_tasks(void)
         return;
     }
     sched->task_info(str);
+    // reset after printing: the next table and the loop figures cover the
+    // next interval (update_logging() does this when logging is built)
+    sched->perf_info.reset();
     if (str.has_failed_allocation() || str.get_length() == 0) {
         return;
     }
@@ -159,7 +168,12 @@ void mon_fn(void *, void *, void *)
         mon_cpu_line();
         if (init && CONFIG_AP_HAL_ZEPHYR_MONITOR_TASKS_EVERY > 0) {
             if (!tasks_enabled) {
-                mon_tasks(); // first call enables task recording
+                ExpandingString tmp;
+                sched->task_info(tmp); // first call sets RECORD_TASK_INFO
+                if (!sched->perf_info.has_task_info()) {
+                    sched->perf_info.allocate_task_info(255);
+                }
+                sched->perf_info.reset();
                 tasks_enabled = true;
             } else if (n % CONFIG_AP_HAL_ZEPHYR_MONITOR_TASKS_EVERY == 0) {
                 mon_tasks();
