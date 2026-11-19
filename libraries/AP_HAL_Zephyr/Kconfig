@@ -87,6 +87,18 @@ config AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US
 	  busy-wait. 0 keeps the busy-wait for every wait. Needs
 	  AP_HAL_ZEPHYR_CYCLE_CLOCK.
 
+config AP_HAL_ZEPHYR_IO_BELOW_MAIN
+	bool "IO thread and PRIORITY_IO/storage threads below the main thread"
+	default n
+	help
+	  n: the HAL IO thread (ap_io, 5) and thread_create(PRIORITY_IO) (7)
+	  run above the main thread (8) and preempt the main loop, the
+	  previous behaviour. y: ap_io and PRIORITY_IO at 12, PRIORITY_STORAGE
+	  at 11, below main as in AP_HAL_ChibiOS; they run while the main
+	  loop sleeps (use with AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US, or they only
+	  get the time main blocks on I/O). Timer, RC in/out, CAN, SPI and
+	  I2C classes stay above main.
+
 config AP_HAL_ZEPHYR_MONITOR
 	bool "HAL monitor: periodic status lines on the console"
 	select THREAD_MONITOR

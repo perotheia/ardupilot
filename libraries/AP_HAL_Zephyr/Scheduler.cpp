@@ -394,6 +394,11 @@ void Scheduler::commandline_arguments(uint8_t &argc, char *const *&argv) const
     argv = _argv;
 }
 
+// priority class + offset (positive = more urgent) -> Zephyr priority.
+// Above main (8): boost, timer, RC out/in, CAN, SPI, I2C. Below: UART and
+// the background classes. PRIORITY_IO is above main (7) unless
+// CONFIG_AP_HAL_ZEPHYR_IO_BELOW_MAIN, which puts it and the HAL IO thread
+// below main in the AP_HAL_ChibiOS order (storage, then IO, then scripting).
 int Scheduler::_zephyr_priority(priority_base base, int8_t offset)
 {
     int base_prio;
@@ -407,8 +412,13 @@ int Scheduler::_zephyr_priority(priority_base base, int8_t offset)
     case PRIORITY_I2C:       base_prio = 7;  break;
     case PRIORITY_MAIN:      base_prio = 8;  break;
     case PRIORITY_UART:      base_prio = 9;  break;
+#ifdef CONFIG_AP_HAL_ZEPHYR_IO_BELOW_MAIN
+    case PRIORITY_STORAGE:   base_prio = 11; break;
+    case PRIORITY_IO:        base_prio = IO_THREAD_PRIO; break;
+#else
     case PRIORITY_IO:        base_prio = 7; break;
     case PRIORITY_STORAGE:   base_prio = 12; break;
+#endif
     case PRIORITY_SCRIPTING: base_prio = 13; break;
     case PRIORITY_NET:       base_prio = 13; break;
     case PRIORITY_LED:       base_prio = 14; break;
@@ -416,7 +426,20 @@ int Scheduler::_zephyr_priority(priority_base base, int8_t offset)
     }
 
     int prio = base_prio - static_cast<int>(offset);
-    if (prio < 0)  { prio = 0;  }
-    if (prio > 15) { prio = 15; }
+#ifdef CONFIG_AP_HAL_ZEPHYR_IO_BELOW_MAIN
+    // an offset must not lift a background class to main or above it
+    if (base_prio > CONFIG_MAIN_THREAD_PRIORITY && prio <= CONFIG_MAIN_THREAD_PRIORITY) {
+        prio = CONFIG_MAIN_THREAD_PRIORITY + 1;
+    }
+#endif
+    // preemptible range only: 0 .. the last priority above the idle thread
+    // (the old upper clamp of 15 is the idle priority with the default
+    // CONFIG_NUM_PREEMPT_PRIORITIES=15)
+    if (prio < 0) {
+        prio = 0;
+    }
+    if (prio > K_LOWEST_APPLICATION_THREAD_PRIO) {
+        prio = K_LOWEST_APPLICATION_THREAD_PRIO;
+    }
     return prio;
 }

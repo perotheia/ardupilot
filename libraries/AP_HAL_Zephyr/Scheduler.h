@@ -42,9 +42,17 @@ private:
     static constexpr size_t IO_STACK_SIZE    = 8192;
     static constexpr size_t USER_STACK_SIZE  = 8192;
 
-    // 0 = highest; main runs at 8 (CONFIG_MAIN_THREAD_PRIORITY)
+    // Zephyr preemptible priorities: 0 = most urgent, main runs at 8
+    // (CONFIG_MAIN_THREAD_PRIORITY), K_LOWEST_APPLICATION_THREAD_PRIO is the
+    // last one above the idle thread.
     static constexpr int TIMER_THREAD_PRIO = 2;
+#ifdef CONFIG_AP_HAL_ZEPHYR_IO_BELOW_MAIN
+    // as in AP_HAL_ChibiOS (APM_IO_PRIORITY < APM_MAIN_PRIORITY): the IO
+    // thread runs when the main loop sleeps, it never preempts it
+    static constexpr int IO_THREAD_PRIO    = 12;
+#else
     static constexpr int IO_THREAD_PRIO    = 5;
+#endif
 
     AP_HAL::HAL::Callbacks *_callbacks;
 
