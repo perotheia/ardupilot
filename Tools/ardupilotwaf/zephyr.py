@@ -21,6 +21,28 @@ Post-link phase
    (libarducopter.a etc.), cmake --build zephyr_build --target all is run.
    cmake links the WAF .a files with the Zephyr kernel → zephyr.elf.
 
+Which program is linked
+-----------------------
+The program is the vehicle task generator that this build really posts
+(its name is `bin/<program>`), whatever the waf command was: `./waf rover`,
+`./waf heli`, `./waf build --targets bin/ardurover`. Its own static library
+and the vehicle library it uses are handed to cmake as ARDUPILOT_PROGRAM_LIB
+and ARDUPILOT_VEHICLE_LIB, with ARDUPILOT_CMD = the program name; when the
+cmake cache holds other values (pre_build() runs before the targets are
+known and can only guess) cmake is re-configured before the final link.
+With several programs in one build (`./waf copter` builds arducopter and
+arducopter-heli, `./waf build` every vehicle) the one the command names is
+linked; when that is ambiguous nothing is linked and the build fails with
+the list, instead of leaving a stale or wrong zephyr.elf.
+
+Board files as dependencies
+---------------------------
+hwdef/<board>/hwdef.h (-include) and the generated autoconf.h (-imacros,
+from the board .conf) are in every object's gcc dependency file (waf's
+gccdeps), and ninja re-runs the Zephyr configuration when the .conf or the
+overlay changes: an edit of any of them rebuilds what depends on it (in
+practice every object) without a clean build.
+
 """
 
 import glob
@@ -29,7 +51,7 @@ import re
 import sys
 from collections import OrderedDict
 
-from waflib import Task
+from waflib import Logs, Task
 from waflib.TaskGen import before_method, after_method, feature
 
 
@@ -218,10 +240,10 @@ def pre_build(bld):
         cmake_vars['OVERLAY_CONFIG']             = bld.env.ZEPHYR_BOARD_CONF
     cmake_vars['ARDUPILOT_LIB']  = bld.bldnode.find_or_declare('lib/').abspath()
     cmake_vars['ARDUPILOT_BIN']  = bld.bldnode.find_or_declare('lib/bin').abspath()
-    _cmd = bld.cmd
-    if _cmd == 'build':
-        _cmd = 'arducopter'
-    cmake_vars['ARDUPILOT_CMD']  = _cmd
+    # The program is not known yet (the targets are resolved later): a guess
+    # from the command line, in the same form zephyr_firmware() uses, so that
+    # the usual build needs no second configure.
+    cmake_vars.update(_program_cmake_vars(bld, _guess_program(bld), None, None))
 
     app_src_node = bld.root.find_dir(bld.env.ZEPHYR_APP_DIR)
     if app_src_node is None:
@@ -267,41 +289,132 @@ def pre_build(bld):
     bld.add_to_group(tsk)
 
 
+# waf command -> the vehicle program it means ('rover' builds bin/ardurover)
+_CMD_PROGRAMS = {'build': 'arducopter', 'copter': 'arducopter', 'heli': 'arducopter-heli',
+                 'plane': 'arduplane', 'rover': 'ardurover', 'sub': 'ardusub'}
+# program -> the vehicle library it links (only for the guess in pre_build();
+# the final link takes it from the task generator)
+_PROGRAM_VEHICLE_LIBS = {'arducopter': 'ArduCopter_libs', 'arducopter-heli': 'ArduCopter_libs',
+                         'arduplane': 'ArduPlane_libs', 'ardurover': 'Rover_libs',
+                         'ardusub': 'ArduSub_libs'}
+
+
+def _guess_program(bld):
+    """The program a command line asks for, before the targets are resolved."""
+    for t in (bld.targets or '').split(','):
+        t = t.strip()
+        if t.startswith('bin/'):
+            return t[len('bin/'):]
+    return _CMD_PROGRAMS.get(bld.cmd, bld.cmd)
+
+
+def _program_cmake_vars(bld, program, program_lib, vehicle_lib):
+    """ARDUPILOT_CMD and the two archives of `program` (see app/CMakeLists.txt).
+
+    Paths not given are the ones waf uses for a vehicle program built as a
+    static library: lib/bin/lib<program>.a and lib/lib<Vehicle>_libs.a."""
+    lib_dir = bld.bldnode.find_or_declare('lib/').abspath()
+    if program_lib is None:
+        program_lib = os.path.join(lib_dir, 'bin', 'lib%s.a' % program)
+    if vehicle_lib is None:
+        _name = _PROGRAM_VEHICLE_LIBS.get(program)
+        vehicle_lib = os.path.join(lib_dir, 'lib%s.a' % _name) if _name else ''
+    return OrderedDict([
+        ('ARDUPILOT_CMD', program),
+        ('ARDUPILOT_PROGRAM_LIB', program_lib),
+        ('ARDUPILOT_VEHICLE_LIB', vehicle_lib),
+    ])
+
+
+def _cmake_cache_get(cmake_bld, key):
+    try:
+        with open(os.path.join(cmake_bld, 'CMakeCache.txt')) as fh:
+            for line in fh:
+                m = re.match(r'%s(?::[A-Z]+)?=(.*)$' % re.escape(key), line.rstrip('\n'))
+                if m:
+                    return m.group(1)
+    except EnvironmentError:
+        pass
+    return None
+
+
+def _select_program(bld, programs):
+    """The one program to link out of the posted vehicle programs, or None."""
+    if len(programs) == 1:
+        return programs[0]
+    wanted = _guess_program(bld)
+    for tg in programs:
+        if tg.program_name == wanted:
+            return tg
+    return None
+
+
+def _cmake_final_link(bld):
+    import subprocess
+    programs = getattr(bld, 'zephyr_programs', [])
+    if not programs:
+        return
+    tg = _select_program(bld, programs)
+    if tg is None:
+        bld.fatal('AP_HAL_Zephyr: %d vehicle programs were built (%s) and the command '
+                  'names none of them: zephyr.elf NOT linked. Build one program: '
+                  './waf <vehicle>  or  ./waf build --targets bin/<program>'
+                  % (len(programs), ', '.join(t.name for t in programs)))
+    if len(programs) > 1:
+        Logs.warn('AP_HAL_Zephyr: %d vehicle programs built, zephyr.elf is %s'
+                  % (len(programs), tg.name))
+
+    # the archives of this program, from its task generator
+    program_lib = tg.link_task.outputs[0].abspath()
+    vehicle_lib = ''
+    for use in tg.to_list(getattr(tg, 'use', [])):
+        try:
+            use_tg = bld.get_tgen_by_name(use)
+        except Exception:
+            continue
+        if getattr(use_tg, 'link_task', None) is not None:
+            vehicle_lib = use_tg.link_task.outputs[0].abspath()
+            break
+    wanted = _program_cmake_vars(bld, tg.program_name, program_lib, vehicle_lib)
+
+    cmake_bld = bld.bldnode.make_node('zephyr_build').abspath()
+    cmake_bin = bld.env.get_flat('CMAKE')
+    if any(_cmake_cache_get(cmake_bld, k) != v for k, v in wanted.items()):
+        Logs.info('AP_HAL_Zephyr: configuring the Zephyr link for %s' % tg.name)
+        ret = subprocess.call([cmake_bin] + ['-D%s=%s' % kv for kv in wanted.items()]
+                              + [cmake_bld])
+        if ret != 0:
+            bld.fatal('cmake configure for %s failed (exit %d)' % (tg.name, ret))
+    ret = subprocess.call([cmake_bin, '--build', cmake_bld, '--target', 'all'])
+    if ret != 0:
+        bld.fatal('cmake final link failed (exit %d)' % ret)
+    # hwdef/<board>/defaults.parm -> the embedded parameter defaults
+    # (AP_PARAM_MAX_EMBEDDED_PARAM > 0 in hwdef.h), like ChibiOS boards
+    _defaults = os.path.join(bld.srcnode.abspath(), 'libraries/AP_HAL_Zephyr/hwdef',
+                             bld.env.BOARD, 'defaults.parm')
+    if os.path.exists(_defaults):
+        _elf = os.path.join(cmake_bld, 'zephyr', 'zephyr.elf')
+        _tool = os.path.join(bld.srcnode.abspath(), 'Tools/scripts/apj_tool.py')
+        ret = subprocess.call([sys.executable, _tool, _elf, '--set-file', _defaults])
+        if ret != 0:
+            bld.fatal('apj_tool --set-file %s failed (exit %d)' % (_defaults, ret))
+
+
 @feature('zephyr_ap_program')
 @after_method('process_source')
 def zephyr_firmware(self):
     """
-    After WAF links the vehicle static library, run cmake --build to assemble
-    zephyr.elf (Zephyr kernel + WAF-compiled ArduPilot).
+    Runs for every program task generator this build posts. The vehicle
+    programs (bin/<program>) are collected; one post-build function links
+    zephyr.elf (Zephyr kernel + WAF-compiled ArduPilot) from the selected one.
     """
-    # waf command -> vehicle program name ('rover' builds bin/ardurover, ...)
-    _programs = {'build': 'arducopter', 'copter': 'arducopter', 'plane': 'arduplane',
-                 'rover': 'ardurover', 'sub': 'ardusub'}
-    target_cmd = (self.bld.env.get_flat('ARDUPILOT_CMD')
-                  or _programs.get(self.bld.cmd, self.bld.cmd))
-    if not (self.name == target_cmd or self.name.endswith('/' + target_cmd)):
-        return
+    if getattr(self, 'program_dir', None) != 'bin' or not getattr(self, 'link_task', None):
+        return  # examples, tools, tests: no firmware
 
     self.link_task.always_run = True
 
     bld = self.bld
-
-    def _cmake_final_link(bld):
-        import subprocess
-        cmake_bld = bld.bldnode.make_node('zephyr_build').abspath()
-        cmake_bin = bld.env.get_flat('CMAKE')
-        ret = subprocess.call([cmake_bin, '--build', cmake_bld, '--target', 'all'])
-        if ret != 0:
-            bld.fatal('cmake final link failed (exit %d)' % ret)
-        # hwdef/<board>/defaults.parm -> the embedded parameter defaults
-        # (AP_PARAM_MAX_EMBEDDED_PARAM > 0 in hwdef.h), like ChibiOS boards
-        _defaults = os.path.join(bld.srcnode.abspath(), 'libraries/AP_HAL_Zephyr/hwdef',
-                                 bld.env.BOARD, 'defaults.parm')
-        if os.path.exists(_defaults):
-            _elf = os.path.join(cmake_bld, 'zephyr', 'zephyr.elf')
-            _tool = os.path.join(bld.srcnode.abspath(), 'Tools/scripts/apj_tool.py')
-            ret = subprocess.call([sys.executable, _tool, _elf, '--set-file', _defaults])
-            if ret != 0:
-                bld.fatal('apj_tool --set-file %s failed (exit %d)' % (_defaults, ret))
-
-    bld.add_post_fun(_cmake_final_link)
+    if not hasattr(bld, 'zephyr_programs'):
+        bld.zephyr_programs = []
+        bld.add_post_fun(_cmake_final_link)
+    bld.zephyr_programs.append(self)

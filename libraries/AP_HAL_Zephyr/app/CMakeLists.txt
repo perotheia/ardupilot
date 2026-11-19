@@ -86,7 +86,19 @@ message(STATUS "ARDUPILOT_BIN=${ARDUPILOT_BIN}")
 # --start-group/--end-group so libkernel.a and ArduPilot archives can resolve
 # each other's symbols across multiple passes.
 set(_KERNEL_LIB "${CMAKE_CURRENT_BINARY_DIR}/zephyr/kernel/libkernel.a")
-if(${ARDUPILOT_CMD} STREQUAL "arducopter" OR ${ARDUPILOT_CMD} STREQUAL "copter")
+if(DEFINED ARDUPILOT_PROGRAM_LIB AND NOT "${ARDUPILOT_PROGRAM_LIB}" STREQUAL "")
+    # the archives of the program WAF builds, named by zephyr.py from its task
+    # generator (any vehicle program: arducopter-heli, ...); ARDUPILOT_CMD is
+    # then only the program's name
+    message(STATUS "ARDUPILOT_PROGRAM_LIB=${ARDUPILOT_PROGRAM_LIB}")
+    message(STATUS "ARDUPILOT_VEHICLE_LIB=${ARDUPILOT_VEHICLE_LIB}")
+    target_link_libraries(app PRIVATE
+        -Wl,--start-group
+        "${ARDUPILOT_PROGRAM_LIB}"
+        ${ARDUPILOT_VEHICLE_LIB}
+        "${_KERNEL_LIB}"
+        -Wl,--end-group)
+elseif(${ARDUPILOT_CMD} STREQUAL "arducopter" OR ${ARDUPILOT_CMD} STREQUAL "copter")
     target_link_libraries(app PRIVATE
         -Wl,--start-group
         "${ARDUPILOT_BIN}/libarducopter.a"
