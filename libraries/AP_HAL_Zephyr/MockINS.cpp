@@ -50,7 +50,9 @@ void AP_InertialSensor_Zephyr_Mock::accumulate()
         _next_sample_us = now;
     }
     // catch up at most 20 samples (20 ms) after a stall, then resync
-    if (now - _next_sample_us > 20 * MOCK_SAMPLE_US) {
+    // (_next_sample_us is normally up to one period AHEAD of now: compare
+    // only when it is behind, the difference is unsigned)
+    if (now > _next_sample_us && now - _next_sample_us > 20 * MOCK_SAMPLE_US) {
         _next_sample_us = now - 20 * MOCK_SAMPLE_US;
     }
     while (_next_sample_us <= now) {
