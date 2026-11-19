@@ -10,10 +10,13 @@ static const uint32_t MOCK_GYRO_ID  =
 static const uint32_t MOCK_ACCEL_ID =
     AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_UNKNOWN, 0, 0x01, AP_InertialSensor_Backend::DEVTYPE_ACC_MPU9250);
 
+uint32_t ap_mock_ins_samples;
+
 AP_InertialSensor_Zephyr_Mock::AP_InertialSensor_Zephyr_Mock(AP_InertialSensor &ins)
     : AP_InertialSensor_Backend(ins)
     , _accel_instance(0)
     , _gyro_instance(0)
+    , _next_sample_us(0)
 {
 }
 
@@ -35,10 +38,35 @@ AP_InertialSensor_Backend *AP_InertialSensor_Zephyr_Mock::probe(AP_InertialSenso
     return backend;
 }
 
+// Raw samples at the registered 1 kHz, synthesised from elapsed time. The
+// frontend's wait_for_sample() (and the INS gyro calibration at boot) waits
+// for the new-sample flags that only _notify_new_*_raw_sample() raises:
+// publishing alone left the main loop spinning there forever.
+void AP_InertialSensor_Zephyr_Mock::accumulate()
+{
+    const uint64_t now = AP_HAL::micros64();
+
+    if (_next_sample_us == 0) {
+        _next_sample_us = now;
+    }
+    // catch up at most 20 samples (20 ms) after a stall, then resync
+    if (now - _next_sample_us > 20 * MOCK_SAMPLE_US) {
+        _next_sample_us = now - 20 * MOCK_SAMPLE_US;
+    }
+    while (_next_sample_us <= now) {
+        _notify_new_accel_raw_sample(_accel_instance, Vector3f(0.0f, 0.0f, -GRAVITY_MSS),
+                                     _next_sample_us);
+        _notify_new_gyro_raw_sample(_gyro_instance, Vector3f(0.0f, 0.0f, 0.0f), _next_sample_us);
+        _next_sample_us += MOCK_SAMPLE_US;
+        ap_mock_ins_samples++;
+    }
+}
+
 bool AP_InertialSensor_Zephyr_Mock::update()
 {
-    _publish_accel(_accel_instance, Vector3f(0.0f, 0.0f, -GRAVITY_MSS));
-    _publish_gyro(_gyro_instance, Vector3f(0.0f, 0.0f, 0.0f));
+    accumulate();
+    update_accel(_accel_instance);
+    update_gyro(_gyro_instance);
     return true;
 }
 
