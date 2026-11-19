@@ -63,6 +63,28 @@ config AP_HAL_BOARD_VOLTAGE_MV
 	  Value reported by AnalogIn::board_voltage(); only relevant
 	  when there is no VCC-monitor ADC channel.
 
+config AP_HAL_ZEPHYR_MONITOR
+	bool "HAL monitor: periodic status lines on the console"
+	select THREAD_MONITOR
+	select SCHED_THREAD_USAGE
+	help
+	  Diagnostics from a thread above the ArduPilot main thread (so it
+	  still reports when main spins): scheduler ticks, current task,
+	  loop timing, free heap, the RPMsg link counters and the CPU share
+	  of every thread; every AP_HAL_ZEPHYR_MONITOR_TASKS_EVERY lines also
+	  the scheduler task table (@SYS/tasks.txt).
+
+config AP_HAL_ZEPHYR_MONITOR_PERIOD_MS
+	int "HAL monitor period in ms"
+	default 1000
+	range 100 60000
+	depends on AP_HAL_ZEPHYR_MONITOR
+
+config AP_HAL_ZEPHYR_MONITOR_TASKS_EVERY
+	int "HAL monitor: print the task table every N status lines (0 = never)"
+	default 30
+	depends on AP_HAL_ZEPHYR_MONITOR
+
 config AP_HAL_ZEPHYR_MOCK_SENSORS
 	bool "Use mock IMU and barometer backends"
 	default n

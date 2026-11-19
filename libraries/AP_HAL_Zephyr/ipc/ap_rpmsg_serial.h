@@ -41,6 +41,12 @@ bool ap_rpmsg_serial_tx_pending(void);
 
 void ap_rpmsg_serial_discard_rx(void);
 
+/* link counters for diagnostics (bytes, kicks, stalled sends, dropped RX) */
+struct ap_rpmsg_serial_stats {
+	uint32_t rx_bytes, tx_bytes, rx_dropped, tx_stalls, notifies, kicks;
+};
+void ap_rpmsg_serial_stats_get(struct ap_rpmsg_serial_stats *st);
+
 #ifdef __cplusplus
 }
 #endif

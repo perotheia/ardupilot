@@ -76,6 +76,7 @@ static atomic_t dds_link_up;
 /* max rpmsg payload per message (buffer size - header); set from the vdev. */
 static int tx_chunk_max = 480;
 static uint32_t rpmsg_rx_dropped;
+static uint32_t rpmsg_rx_bytes, rpmsg_tx_bytes, rpmsg_tx_stalls, rpmsg_notifies, rpmsg_kicks;
 
 static K_SEM_DEFINE(data_sem, 0, 1);
 
@@ -97,6 +98,7 @@ static void platform_ipm_callback(const struct device *dev, void *context,
 				  uint32_t id, volatile void *data)
 {
 	ARG_UNUSED(context);
+	rpmsg_notifies++;
 	ap_rpmsg_board_ipm_msg(dev, id, data);
 	k_sem_give(&data_sem);
 }
@@ -114,6 +116,7 @@ static int mailbox_notify(void *priv, uint32_t id)
 		 * while holding the channel mutex at prio 5, which can starve
 		 * main and freeze the FC. */
 		if (ipm_send(ipm_handle, 0, id, &id, sizeof(id)) != -EBUSY) {
+			rpmsg_kicks++;
 			return 0;   /* kicked */
 		}
 		k_usleep(50);
@@ -272,6 +275,7 @@ static int dds_ept_cb(struct rpmsg_endpoint *ept, void *data, size_t len,
 	ARG_UNUSED(priv);
 
 	uint32_t put = ring_buf_put(&rpmsg_rx_ring, data, len);
+	rpmsg_rx_bytes += put;
 	if (put < len) {
 		rpmsg_rx_dropped += (uint32_t)len - put;
 	}
@@ -300,14 +304,26 @@ static void rpmsg_tx_drain(void)
 		int ret = rpmsg_trysend(&dds_ept, p, claimed);
 		if (ret == (int)claimed) {
 			ring_buf_get_finish(&rpmsg_tx_ring, claimed);
+			rpmsg_tx_bytes += claimed;
 		} else {
 			/* DBG only -- fires per send under backpressure. */
 			ring_buf_get_finish(&rpmsg_tx_ring, 0);
+			rpmsg_tx_stalls++;
 			LOG_DBG("rpmsg-tty TX stalled: trysend=%d claimed=%u dest=0x%08x",
 				ret, (unsigned)claimed, dds_ept.dest_addr);
 			break;
 		}
 	}
+}
+
+void ap_rpmsg_serial_stats_get(struct ap_rpmsg_serial_stats *st)
+{
+	st->rx_bytes = rpmsg_rx_bytes;
+	st->tx_bytes = rpmsg_tx_bytes;
+	st->rx_dropped = rpmsg_rx_dropped;
+	st->tx_stalls = rpmsg_tx_stalls;
+	st->notifies = rpmsg_notifies;
+	st->kicks = rpmsg_kicks;
 }
 
 bool ap_rpmsg_serial_up(void)

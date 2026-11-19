@@ -16,6 +16,10 @@
 
 using namespace Zephyr;
 
+#if defined(CONFIG_AP_HAL_ZEPHYR_MONITOR)
+void ap_hal_zephyr_monitor_start(void);
+#endif
+
 // ports above 4 fall back to Empty::UARTDriver so HAL_ZEPHYR_NUM_SERIAL_PORTS
 // can be tuned down per-board without leaving dangling instances.
 // HAL_ZEPHYR_RPMSG_SERIAL_PORT picks the SERIALn the rpmsg-tty bridge backs:
@@ -122,6 +126,9 @@ void HAL_Zephyr::run(int argc, char *const argv[], Callbacks *callbacks) const
     schedulerInstance.set_arguments(argc, argv);
     schedulerInstance.set_callbacks(callbacks);
     scheduler->init();
+#if defined(CONFIG_AP_HAL_ZEPHYR_MONITOR)
+    ap_hal_zephyr_monitor_start();
+#endif
 
     i2cDeviceManager.begin();
 
