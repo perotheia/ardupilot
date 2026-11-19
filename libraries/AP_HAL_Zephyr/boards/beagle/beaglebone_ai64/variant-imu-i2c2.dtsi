@@ -1,0 +1,17 @@
+/*
+ * Build variant "imu-i2c2" (setup/ardupilot-ai64.sh VARIANT=imu): real sensors on MAIN I2C2, P9_19 SCL / P9_20 SDA,
+ * 400 kHz (MPU-6050 0x68, LIS3MDL 0x1C; probe lists in hwdef.h). Only in this variant: I2C2 is powered on and
+ * driven by this core, so Linux must have main_i2c2 disabled before such an ELF runs.
+ */
+/ {
+	aliases {
+		ardupilot-i2c0 = &i2c2;
+	};
+};
+
+&i2c2 {
+	pinctrl-0 = <&i2c2_default>;
+	pinctrl-names = "default";
+	clock-frequency = <400000>;
+	status = "okay";
+};

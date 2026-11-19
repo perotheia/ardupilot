@@ -16,7 +16,7 @@
 #define HAL_ZEPHYR_SPI_DEVICES
 
 // no compass on this vehicle (GPS without a compass, skid steering)
-#define HAL_MAG_PROBE_LIST
+// compass: see the sensor section below
 
 #ifndef HAL_GCS_ENABLED
 #define HAL_GCS_ENABLED 1
@@ -101,6 +101,22 @@
     ADD_BACKEND(AP_InertialSensor_Zephyr_Mock::probe(*this))
 #define HAL_BARO_PROBE_LIST \
     _add_backend(AP_Baro_Dummy::probe(*this))
+#define HAL_MAG_PROBE_LIST
 #else
-#error "beaglebone_ai64: real IMUs (SPI6) are a later milestone; build with CONFIG_AP_HAL_ZEPHYR_MOCK_SENSORS"
+/*
+ * Real sensors on MAIN I2C2 (P9_19 SCL / P9_20 SDA, 400 kHz, the overlay's ardupilot-i2c0): IMU 1 = MPU-6050
+ * at 0x68 (AP_InertialSensor_Invensense, 1 kHz with its FIFO), compass = LIS3MDL at 0x1C (the Adafruit 9-DoF
+ * board; external). No barometer on this vehicle (dummy). Mounting: ROTATION_NONE here; set
+ * AHRS_ORIENTATION / COMPASS_ORIENT on the vehicle. The second IMU comes later on SPI6.
+ */
+#ifdef __cplusplus
+#include <AP_Baro/AP_Baro_Dummy.h>
+#endif
+#define HAL_INS_PROBE_LIST \
+    ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.i2c_mgr->get_device(0, 0x68, 400000), ROTATION_NONE))
+#define HAL_BARO_PROBE_LIST \
+    _add_backend(AP_Baro_Dummy::probe(*this))
+#define HAL_MAG_PROBE_LIST \
+    { add_backend(DRIVER_LIS3MDL, AP_Compass_LIS3MDL::probe(hal.i2c_mgr->get_device(0, 0x1c, 400000), \
+                                                          true, ROTATION_NONE)); RETURN_IF_NO_SPACE; }
 #endif
