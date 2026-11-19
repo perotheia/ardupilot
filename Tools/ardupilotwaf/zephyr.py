@@ -293,5 +293,15 @@ def zephyr_firmware(self):
         ret = subprocess.call([cmake_bin, '--build', cmake_bld, '--target', 'all'])
         if ret != 0:
             bld.fatal('cmake final link failed (exit %d)' % ret)
+        # hwdef/<board>/defaults.parm -> the embedded parameter defaults
+        # (AP_PARAM_MAX_EMBEDDED_PARAM > 0 in hwdef.h), like ChibiOS boards
+        _defaults = os.path.join(bld.srcnode.abspath(), 'libraries/AP_HAL_Zephyr/hwdef',
+                                 bld.env.BOARD, 'defaults.parm')
+        if os.path.exists(_defaults):
+            _elf = os.path.join(cmake_bld, 'zephyr', 'zephyr.elf')
+            _tool = os.path.join(bld.srcnode.abspath(), 'Tools/scripts/apj_tool.py')
+            ret = subprocess.call([sys.executable, _tool, _elf, '--set-file', _defaults])
+            if ret != 0:
+                bld.fatal('apj_tool --set-file %s failed (exit %d)' % (_defaults, ret))
 
     bld.add_post_fun(_cmake_final_link)
