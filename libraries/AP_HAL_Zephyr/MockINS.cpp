@@ -5,10 +5,10 @@
 #include <AP_HAL/AP_HAL.h>
 
 // BUS_TYPE_UNKNOWN so the mock can't collide with any real sensor ID
-static constexpr uint32_t MOCK_GYRO_ID  =
-    AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_UNKNOWN, 0, 0x01, DEVTYPE_GYR_MPU9250);
-static constexpr uint32_t MOCK_ACCEL_ID =
-    AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_UNKNOWN, 0, 0x01, DEVTYPE_ACC_MPU9250);
+static const uint32_t MOCK_GYRO_ID  =
+    AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_UNKNOWN, 0, 0x01, AP_InertialSensor_Backend::DEVTYPE_GYR_MPU9250);
+static const uint32_t MOCK_ACCEL_ID =
+    AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_UNKNOWN, 0, 0x01, AP_InertialSensor_Backend::DEVTYPE_ACC_MPU9250);
 
 AP_InertialSensor_Zephyr_Mock::AP_InertialSensor_Zephyr_Mock(AP_InertialSensor &ins)
     : AP_InertialSensor_Backend(ins)
