@@ -185,17 +185,37 @@ void Scheduler::delay_microseconds(uint16_t us)
     k_busy_wait(us);
 }
 
+// The timer and IO threads walk these tables while the main thread (or a
+// driver thread) registers: write the slot first and only then the count,
+// with interrupts locked, so a preempting reader never sees a counted slot
+// that is half written.
 void Scheduler::register_timer_process(AP_HAL::MemberProc proc)
 {
-    if (_num_timer_procs < MAX_TIMER_PROCS) {
-        _timer_procs[_num_timer_procs++] = proc;
+    const unsigned int key = irq_lock();
+    const bool ok = _num_timer_procs < MAX_TIMER_PROCS;
+    if (ok) {
+        _timer_procs[_num_timer_procs] = proc;
+        _num_timer_procs = _num_timer_procs + 1;
+    }
+    irq_unlock(key);
+    if (!ok) {
+        printk("AP_HAL_Zephyr: timer process table full (%u), registration dropped\n",
+               (unsigned)MAX_TIMER_PROCS);
     }
 }
 
 void Scheduler::register_io_process(AP_HAL::MemberProc proc)
 {
-    if (_num_io_procs < MAX_IO_PROCS) {
-        _io_procs[_num_io_procs++] = proc;
+    const unsigned int key = irq_lock();
+    const bool ok = _num_io_procs < MAX_IO_PROCS;
+    if (ok) {
+        _io_procs[_num_io_procs] = proc;
+        _num_io_procs = _num_io_procs + 1;
+    }
+    irq_unlock(key);
+    if (!ok) {
+        printk("AP_HAL_Zephyr: IO process table full (%u), registration dropped\n",
+               (unsigned)MAX_IO_PROCS);
     }
 }
 
