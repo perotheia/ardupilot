@@ -145,8 +145,8 @@ def configure(cfg):
     # not be enabled in the default build).
     _extra_dts = os.environ.get('ZEPHYR_EXTRA_DTC_OVERLAY', '')
     _extra_conf = os.environ.get('ZEPHYR_EXTRA_CONF', '')
-    for _f in (_extra_dts, _extra_conf):
-        if _f and not os.path.exists(_f):
+    for _f in [x for x in (_extra_dts + ';' + _extra_conf).split(';') if x]:
+        if not os.path.exists(_f):
             cfg.fatal('AP_HAL_Zephyr: build variant file not found: %s' % _f)
     if _extra_dts:
         env.DTC_OVERLAY_FILE = env.DTC_OVERLAY_FILE + ';' + _extra_dts
