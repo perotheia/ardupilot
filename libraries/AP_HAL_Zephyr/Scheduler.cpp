@@ -152,7 +152,10 @@ void Scheduler::init()
 
 void Scheduler::delay(uint16_t ms)
 {
-    if (ms >= _min_delay_cb_ms) {
+    // the delay callback (GCS updates during long waits) belongs to the main
+    // thread only, as in AP_HAL_ChibiOS: other threads calling delay() must
+    // not run it concurrently with the main loop
+    if (ms >= _min_delay_cb_ms && in_main_thread()) {
         call_delay_cb();
     }
     k_sleep(K_MSEC(ms));
