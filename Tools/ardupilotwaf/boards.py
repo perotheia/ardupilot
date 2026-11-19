@@ -1185,6 +1185,10 @@ class zephyr(Board):
                       or self._zephyr_sdk_triple(cfg)
                       or 'riscv64-zephyr-elf')
             bindir = os.path.join(sdk, triple, 'bin')
+            # Zephyr SDK >= 1.0 keeps the GNU toolchains under gnu/
+            _gnu_bindir = os.path.join(sdk, 'gnu', triple, 'bin')
+            if not os.path.isdir(bindir) and os.path.isdir(_gnu_bindir):
+                bindir = _gnu_bindir
             cfg.env.TOOLCHAIN = os.path.join(bindir, triple)
             os.environ['PATH'] = bindir + os.pathsep + os.environ.get('PATH', '')
         elif cross:

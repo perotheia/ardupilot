@@ -119,7 +119,7 @@ def configure(cfg):
     env.ZEPHYR_BOARD_CONF = board_conf if os.path.exists(board_conf) else ''
 
     env.CMAKE_PROJECT_NAME   = 'ardupilot-zephyr'
-    env.Zephyr_DIR           = os.path.join(ardupilot_root, 'modules/zephyr/share/zephyr-package/cmake')
+    env.Zephyr_DIR           = os.path.join(zephyr_base, 'share/zephyr-package/cmake')
     _workspace_root = os.path.dirname(ardupilot_root)
 
     _env_modules = os.environ.get('ZEPHYR_MODULES', '')
@@ -274,7 +274,11 @@ def zephyr_firmware(self):
     After WAF links the vehicle static library, run cmake --build to assemble
     zephyr.elf (Zephyr kernel + WAF-compiled ArduPilot).
     """
-    target_cmd = self.bld.env.get_flat('ARDUPILOT_CMD') or 'arducopter'
+    # waf command -> vehicle program name ('rover' builds bin/ardurover, ...)
+    _programs = {'build': 'arducopter', 'copter': 'arducopter', 'plane': 'arduplane',
+                 'rover': 'ardurover', 'sub': 'ardusub'}
+    target_cmd = (self.bld.env.get_flat('ARDUPILOT_CMD')
+                  or _programs.get(self.bld.cmd, self.bld.cmd))
     if not (self.name == target_cmd or self.name.endswith('/' + target_cmd)):
         return
 
