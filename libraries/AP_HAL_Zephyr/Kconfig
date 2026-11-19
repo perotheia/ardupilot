@@ -78,10 +78,14 @@ config AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US
 	int "Scheduler::delay_microseconds(): sleep for waits of at least N us (0 = always busy-wait)"
 	default 0
 	help
-	  Waits this long or longer sleep until 1.5 ticks before the
-	  deadline and busy-wait the rest (exact deadline, idle CPU for the
-	  lower-priority threads); shorter waits busy-wait. 0 keeps the
-	  busy-wait for every wait.
+	  Waits this long or longer sleep whole ticks while a tick edge is
+	  sure to come before the deadline and busy-wait the rest on the
+	  microsecond clock (DelayCalc.h): the CPU is idle for the
+	  lower-priority threads, the final busy-wait is about one tick. The
+	  function returns after the requested time, never before; it is late
+	  when the thread is not given the CPU at the deadline. Shorter waits
+	  busy-wait. 0 keeps the busy-wait for every wait. Needs
+	  AP_HAL_ZEPHYR_CYCLE_CLOCK.
 
 config AP_HAL_ZEPHYR_MONITOR
 	bool "HAL monitor: periodic status lines on the console"

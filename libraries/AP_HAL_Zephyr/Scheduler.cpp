@@ -1,5 +1,6 @@
 #include "Scheduler.h"
 #include "PeriodicCallback.h"
+#include "DelayCalc.h"
 
 #include <string.h>
 #include <zephyr/drivers/gpio.h>
@@ -24,6 +25,63 @@ static void io_expiry_fn(struct k_timer *)    { k_sem_give(&s_io_sem);    }
 
 static K_TIMER_DEFINE(s_hal_timer, timer_expiry_fn, NULL);
 static K_TIMER_DEFINE(s_hal_io,    io_expiry_fn,    NULL);
+
+#if CONFIG_AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US > 0
+#ifndef CONFIG_AP_HAL_ZEPHYR_CYCLE_CLOCK
+#error "AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US needs the microsecond clock (AP_HAL_ZEPHYR_CYCLE_CLOCK)"
+#endif
+
+// sleeps of delay_microseconds() that ended after the deadline (a tick edge
+// later than DelayCalc.h allows for, or a higher-priority thread at the
+// wake-up): count and worst lateness, for the monitor line
+uint32_t ap_hal_zephyr_delay_late_count;
+uint32_t ap_hal_zephyr_delay_late_max_us;
+
+namespace {
+
+// the nominal tick, rounded up (a longer tick only makes the sleep shorter)
+constexpr uint32_t DELAY_TICK_US =
+    (1000000U + CONFIG_SYS_CLOCK_TICKS_PER_SEC - 1U) / CONFIG_SYS_CLOCK_TICKS_PER_SEC;
+
+struct DelayPort {
+    unsigned int key;
+
+    uint64_t now_us() { return AP_HAL::micros64(); }
+
+    // irq_lock() is per thread: the kernel drops it while this thread is
+    // switched out in k_sleep() and restores it on resume. It keeps a tick
+    // edge or another thread from slipping in between reading the clock,
+    // reading the tick count and queueing the timeout.
+    void lock() { key = irq_lock(); }
+    void unlock() { irq_unlock(key); }
+
+#ifdef CONFIG_TIMEOUT_64BIT
+    static constexpr uint32_t MIN_EDGES = 1;
+    void sleep_edges(uint32_t k)
+    {
+        // k_uptime_ticks() counts the edges up to now, announced or not: the
+        // absolute timeout expires on edge k after now
+        k_sleep(K_TIMEOUT_ABS_TICKS(k_uptime_ticks() + (int64_t)k));
+    }
+#else
+    static constexpr uint32_t MIN_EDGES = 2;
+    void sleep_edges(uint32_t k)
+    {
+        k_sleep(K_TICKS(k - 1U)); // wakes on edge (k - 1) + 1 after now
+    }
+#endif
+
+    void late(uint64_t us)
+    {
+        ap_hal_zephyr_delay_late_count++;
+        if (us > ap_hal_zephyr_delay_late_max_us) {
+            ap_hal_zephyr_delay_late_max_us = us > UINT32_MAX ? UINT32_MAX : (uint32_t)us;
+        }
+    }
+};
+
+} // namespace
+#endif
 
 static void timer_thread_fn(void *arg, void *, void *)
 {
@@ -111,20 +169,13 @@ void Scheduler::delay_microseconds(uint16_t us)
 #if CONFIG_AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US > 0
     // Long waits (the main loop's wait for the next IMU sample is most of a
     // loop period) sleep, so lower-priority threads run and idle shows real
-    // headroom. k_usleep() wakes on a tick boundary up to one tick late, so
-    // sleep until one tick + margin before the deadline and busy-wait the
-    // rest: the deadline stays exact.
+    // headroom: whole ticks while a tick edge is sure to come before the
+    // deadline, then a busy-wait on the microsecond clock (DelayCalc.h).
+    // Returns after t_call + us, never before; later only by the busy-wait's
+    // poll step, or when this thread was not given the CPU in time.
     if (us >= CONFIG_AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US) {
-        const uint64_t end = AP_HAL::micros64() + us;
-        const uint32_t tick_us = 1000000U / CONFIG_SYS_CLOCK_TICKS_PER_SEC;
-        const uint32_t guard = tick_us + tick_us / 2U;
-        if (us > guard) {
-            k_usleep(us - guard);
-        }
-        const uint64_t now = AP_HAL::micros64();
-        if (now < end) {
-            k_busy_wait((uint32_t)(end - now));
-        }
+        DelayPort port;
+        delay_until(port, AP_HAL::micros64(), us, DELAY_TICK_US, DelayPort::MIN_EDGES);
         return;
     }
 #endif
