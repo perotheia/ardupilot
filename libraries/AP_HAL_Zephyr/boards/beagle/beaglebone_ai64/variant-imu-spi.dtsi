@@ -1,0 +1,18 @@
+/*
+ * Build variant "imu-spi" (setup/ardupilot-ai64.sh VARIANT=imu-spi, combinable): the cape IMU, an LSM6DS3 on
+ * McSPI6 CS0 (P9_17), driven by ArduPilot (AP_InertialSensor_LSM6DS3, SPI device "lsm6ds3_cape" in hwdef.h).
+ * Listed before cam-imu in a combined build so that cam-imu's SPI6 pinctrl (with CS3) is the one applied.
+ */
+/ {
+	aliases {
+		ardupilot-spi0 = &main_spi6;
+	};
+};
+
+&main_spi6 {
+	pinctrl-0 = <&mcspi6_default>;
+	pinctrl-names = "default";
+	ti,spi-num-cs = <4>;
+	ti,d1-miso-d0-mosi;
+	status = "okay";
+};

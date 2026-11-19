@@ -12,8 +12,10 @@
 #endif
 #define HAL_ZEPHYR_RPMSG_SERIAL_PORT 0
 
-// empty token — SPIDevice.cpp always expands HAL_ZEPHYR_SPI_DEVICES
-#define HAL_ZEPHYR_SPI_DEVICES
+// SPI sensors: the cape IMU on McSPI6 CS0 (bus 0 = the ardupilot-spi0 alias, present in the imu-spi variant;
+// without it the probe fails cleanly). {name, bus, cs, low Hz, high Hz, mode}
+#define HAL_ZEPHYR_SPI_DEVICES \
+    {"lsm6ds3_cape", 0, 0, 1000000, 10000000, 3},
 
 // no compass on this vehicle (GPS without a compass, skid steering)
 // compass: see the sensor section below
@@ -111,8 +113,12 @@
  */
 #ifdef __cplusplus
 #include <AP_Baro/AP_Baro_Dummy.h>
+#include <AP_InertialSensor/AP_InertialSensor_LSM6DS3.h>
 #endif
+// IMU 1 = the cape LSM6DS3 on SPI6 CS0 (variant imu-spi), IMU 2 = the MPU-6050 on I2C2 (variant imu); an
+// absent sensor's probe just fails
 #define HAL_INS_PROBE_LIST \
+    ADD_BACKEND(AP_InertialSensor_LSM6DS3::probe(*this, hal.spi->get_device("lsm6ds3_cape"), ROTATION_NONE)); \
     ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.i2c_mgr->get_device(0, 0x68, 400000), ROTATION_NONE))
 #define HAL_BARO_PROBE_LIST \
     _add_backend(AP_Baro_Dummy::probe(*this))
