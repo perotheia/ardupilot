@@ -63,6 +63,17 @@ config AP_HAL_BOARD_VOLTAGE_MV
 	  Value reported by AnalogIn::board_voltage(); only relevant
 	  when there is no VCC-monitor ADC channel.
 
+config AP_HAL_ZEPHYR_CYCLE_CLOCK
+	bool "AP_HAL::micros64()/millis64() from the hardware cycle counter"
+	default n
+	depends on !SMP
+	help
+	  y: microsecond resolution from a 64-bit extension of
+	  k_cycle_get_32() (CycleClock.h). Needs a free-running counter and a
+	  caller at least once per counter wrap period (the 1 kHz timer
+	  thread). n: the kernel tick clock (k_uptime_ticks(), 1 ms at 1000
+	  ticks/s), the previous behaviour.
+
 config AP_HAL_ZEPHYR_DELAY_SLEEP_MIN_US
 	int "Scheduler::delay_microseconds(): sleep for waits of at least N us (0 = always busy-wait)"
 	default 0

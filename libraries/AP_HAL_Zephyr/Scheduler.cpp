@@ -293,8 +293,13 @@ void Scheduler::_run_timer_procs()
         _timer_procs[i]();
     }
 
+    // Read on every pass, failsafe registered or not: with
+    // CONFIG_AP_HAL_ZEPHYR_CYCLE_CLOCK this 1 kHz read is what keeps the
+    // 64-bit extension of the 32-bit cycle counter correct (it must be read
+    // at least once per wrap period, see system.cpp).
+    const uint64_t now = AP_HAL::micros64();
+
     if (_failsafe != nullptr && _failsafe_period_us != 0) {
-        const uint64_t now = k_ticks_to_us_floor64(k_uptime_ticks());
         if ((now - _last_failsafe_us) >= _failsafe_period_us) {
             _last_failsafe_us = now;
             _failsafe();
