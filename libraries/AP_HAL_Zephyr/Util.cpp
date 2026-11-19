@@ -1,8 +1,16 @@
 #include "Util.h"
 
-#include <malloc.h>
-
 #include <zephyr/kernel.h>
+
+#if defined(CONFIG_COMMON_LIBC_MALLOC)
+// picolibc (Zephyr SDK >= 1.0 ships no newlib): malloc is Zephyr's common
+// libc heap; mallinfo() would pull picolibc's own allocator in beside it
+// (duplicate malloc/free at link).
+#include <zephyr/sys/mem_stats.h>
+extern "C" int malloc_runtime_stats_get(struct sys_memory_stats *stats);
+#else
+#include <malloc.h>
+#endif
 
 #include <AP_HAL_Zephyr/RCOutput.h>
 #include <AP_HAL_Zephyr/Scheduler.h>
@@ -30,10 +38,17 @@ void Util::commandline_arguments(uint8_t &argc, char *const *&argv)
 // give it a real free-heap figure so it proceeds to actually allocate.
 uint32_t Util::available_memory()
 {
+#if defined(CONFIG_COMMON_LIBC_MALLOC)
+    struct sys_memory_stats stats;
+    if (malloc_runtime_stats_get(&stats) == 0) {
+        return (uint32_t)stats.free_bytes;
+    }
+#else
     struct mallinfo mi = mallinfo();
     if (mi.fordblks > 0) {
         return (uint32_t)mi.fordblks;
     }
+#endif
     return CONFIG_HEAP_MEM_POOL_SIZE;
 }
 
