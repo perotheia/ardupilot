@@ -3,6 +3,21 @@
 
 #include <string.h>
 
+bool joy_rfs_allowed(struct joy_rfs *r, uint32_t now_ms, bool radio_ok, bool joy_owns, uint32_t window_ms)
+{
+	if (radio_ok && !joy_owns) {
+		r->seen = true;
+		r->radio_cmd_ms = now_ms;
+	}
+	if (!r->seen) {
+		return false;
+	}
+	if (!joy_owns) {
+		return true;
+	}
+	return (uint32_t)(now_ms - r->radio_cmd_ms) <= window_ms;
+}
+
 void joy_arb_init(struct joy_arb *a)
 {
 	memset(a, 0, sizeof(*a));

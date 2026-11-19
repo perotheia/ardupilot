@@ -94,7 +94,23 @@
 
 // sensors: after the feature gates and the AP_Math dance (MockINS.h pulls the
 // AP_InertialSensor config chain, which defaults every gate it meets)
-#ifdef CONFIG_AP_HAL_ZEPHYR_MOCK_SENSORS
+#if defined(CONFIG_AP_HAL_ZEPHYR_MOCK_SENSORS) && defined(CONFIG_AP_HAL_ZEPHYR_BENCH_MOCK_FALLBACK)
+/* BENCH: the real sensors below, the mock IMU only when no real IMU answered (announced on the GCS) */
+#ifdef __cplusplus
+#include <AP_HAL_Zephyr/MockINS.h>
+#include <AP_Baro/AP_Baro_Dummy.h>
+#include <AP_InertialSensor/AP_InertialSensor_LSM6DS3.h>
+#endif
+#define HAL_INS_PROBE_LIST \
+    ADD_BACKEND(AP_InertialSensor_LSM6DS3::probe(*this, hal.spi->get_device("lsm6ds3_cape"), ROTATION_NONE)); \
+    ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.i2c_mgr->get_device(0, 0x68, 400000), ROTATION_NONE)); \
+    if (_backend_count == 0) { ADD_BACKEND(AP_InertialSensor_Zephyr_Mock::probe(*this)); }
+#define HAL_BARO_PROBE_LIST \
+    _add_backend(AP_Baro_Dummy::probe(*this))
+#define HAL_MAG_PROBE_LIST \
+    { add_backend(DRIVER_LIS3MDL, AP_Compass_LIS3MDL::probe(hal.i2c_mgr->get_device(0, 0x1c, 400000), \
+                                                          true, ROTATION_NONE)); RETURN_IF_NO_SPACE; }
+#elif defined(CONFIG_AP_HAL_ZEPHYR_MOCK_SENSORS)
 #ifdef __cplusplus
 #include <AP_HAL_Zephyr/MockINS.h>
 #include <AP_Baro/AP_Baro_Dummy.h>

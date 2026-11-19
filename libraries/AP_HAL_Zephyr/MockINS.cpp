@@ -3,6 +3,9 @@
 #ifdef CONFIG_AP_HAL_ZEPHYR_MOCK_SENSORS
 
 #include <AP_HAL/AP_HAL.h>
+#ifdef CONFIG_AP_HAL_ZEPHYR_MB_ALLOW_MOCK
+#include <GCS_MAVLink/GCS.h>
+#endif
 
 // BUS_TYPE_UNKNOWN so the mock can't collide with any real sensor ID
 static const uint32_t MOCK_GYRO_ID  =
@@ -57,6 +60,13 @@ void AP_InertialSensor_Zephyr_Mock::accumulate()
 
 bool AP_InertialSensor_Zephyr_Mock::update()
 {
+#ifdef CONFIG_AP_HAL_ZEPHYR_MB_ALLOW_MOCK
+    static uint32_t last_warn_ms;
+    if (last_warn_ms == 0 || AP_HAL::millis() - last_warn_ms > 30000u) {
+        last_warn_ms = AP_HAL::millis() | 1u;
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "BENCH: MOCK IMU (no real IMU found), motor power off");
+    }
+#endif
     accumulate();
     update_accel(_accel_instance);
     update_gyro(_gyro_instance);

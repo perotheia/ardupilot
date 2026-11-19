@@ -70,6 +70,17 @@ struct joy_arb_out {
 	bool changed;                 /* state changed in this step (for messages) */
 };
 
+/*
+ * Source-aware radio failsafe (pascal's ruling, M7): the occupant can always drive by the stick with no radio;
+ * the radio failsafe acts only if the radio was the commanding source (link good while the joystick did not own
+ * the chair) now or within window_ms. A radio never seen as the commanding source never triggers it.
+ */
+struct joy_rfs {
+	bool seen;
+	uint32_t radio_cmd_ms;
+};
+bool joy_rfs_allowed(struct joy_rfs *r, uint32_t now_ms, bool radio_ok, bool joy_owns, uint32_t window_ms);
+
 void joy_arb_init(struct joy_arb *a);
 void joy_arb_step(struct joy_arb *a, const struct joy_arb_in *in, struct joy_arb_out *out);
 

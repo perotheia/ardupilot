@@ -1,0 +1,3 @@
+/* build variant "bench": no devicetree change (see variant-bench.conf) */
+/ {
+};

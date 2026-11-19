@@ -422,6 +422,9 @@ public:
     // FS GCS timeout trigger time
     AP_Float fs_gcs_timeout;
 
+    // radio failsafe source window (s), boards with a local priority input
+    AP_Float fs_rc_src_time;
+
     class ModeCircle mode_circle;
 };
 

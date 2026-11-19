@@ -74,6 +74,18 @@ void Rover::read_radio()
     radio_failsafe_check(channel_throttle->get_radio_in());
 }
 
+/*
+  board hook: may the radio failsafe act? radio_ok = the radio link is good now. Boards with a local priority
+  input (a grip-enabled joystick) let it act only if the radio was the commanding source now or within
+  window_ms; the default always lets it act
+ */
+extern "C" __attribute__((weak)) bool ap_board_radio_failsafe_allowed(bool radio_ok, uint32_t window_ms)
+{
+    (void)radio_ok;
+    (void)window_ms;
+    return true;
+}
+
 void Rover::radio_failsafe_check(uint16_t pwm)
 {
     if (!g.fs_throttle_enabled) {
@@ -86,6 +98,11 @@ void Rover::radio_failsafe_check(uint16_t pwm)
     if (AP_HAL::millis() - failsafe.last_valid_rc_ms > rc().get_fs_timeout_ms()) {
         // we haven't had a valid RC frame for RC_FS_TIMEOUT seconds
         failed = true;
+    }
+    if (failed && !ap_board_radio_failsafe_allowed(false, (uint32_t)(MAX(g2.fs_rc_src_time.get(), 0.0f) * 1000.0f))) {
+        failed = false;
+    } else if (!failed) {
+        (void)ap_board_radio_failsafe_allowed(true, (uint32_t)(MAX(g2.fs_rc_src_time.get(), 0.0f) * 1000.0f));
     }
     AP_Notify::flags.failsafe_radio = failed;
     failsafe_trigger(FAILSAFE_EVENT_THROTTLE, "Radio", failed);

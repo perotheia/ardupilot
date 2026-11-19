@@ -173,6 +173,24 @@ extern "C" bool ap_board_mode_change_allowed(uint8_t new_mode, uint8_t reason)
     return false;
 }
 
+/* Rover radio failsafe hook (main thread): source-aware, see joy_rfs_allowed(); without a working joystick the
+   failsafe acts as on any board */
+extern "C" bool ap_board_radio_failsafe_allowed(bool radio_ok, uint32_t window_ms)
+{
+    static struct joy_rfs rfs;
+    static bool held_off;
+    if (!ready) {
+        return true;
+    }
+    const bool allowed = joy_rfs_allowed(&rfs, AP_HAL::millis(), radio_ok, owns, window_ms);
+    const bool hold_off_now = !radio_ok && !allowed;
+    if (hold_off_now && !held_off) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Radio failsafe held off: joystick in control");
+    }
+    held_off = hold_off_now;
+    return allowed;
+}
+
 namespace Zephyr {
 namespace Joystick {
 

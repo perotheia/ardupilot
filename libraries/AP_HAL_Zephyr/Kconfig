@@ -198,6 +198,13 @@ config AP_HAL_ZEPHYR_MB_ALLOW_MOCK
 	bool "BENCH ONLY: allow arming with the mock sensors (motor power off)"
 	depends on AP_HAL_ZEPHYR_MOCK_SENSORS
 
+config AP_HAL_ZEPHYR_BENCH_MOCK_FALLBACK
+	bool "BENCH ONLY: probe the real IMUs/compass first, the mock IMU only if no real IMU answers"
+	depends on AP_HAL_ZEPHYR_MB_ALLOW_MOCK
+	help
+	  One bench firmware for the motor tests (no IMU wired: mock) and the
+	  IMU tests (IMU wired: real). The mock announces itself on the GCS.
+
 config AP_HAL_ZEPHYR_MB_IS_IDLE_MAX_MA
 	int "Plausibility: current reading above this with the bridge off = fault, mA (0 = off)"
 	default 3000

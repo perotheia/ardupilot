@@ -634,6 +634,15 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Path: mode_circle.cpp
     AP_SUBGROUPINFO(mode_circle, "CIRC", 57, ParametersG2, ModeCircle),
 
+    // @Param: FS_RC_SRC_TIME
+    // @DisplayName: Radio failsafe source window
+    // @Description: On boards with a local priority input (a grip-enabled joystick): the radio failsafe acts only if the radio was the commanding source now or within this many seconds; a stick that has been in control longer keeps driving without the radio. No effect on other boards.
+    // @Units: s
+    // @Range: 0 30
+    // @Increment: 0.5
+    // @User: Advanced
+    AP_GROUPINFO("FS_RC_SRC_TIME", 58, ParametersG2, fs_rc_src_time, 3),
+
     AP_GROUPEND
 };
 

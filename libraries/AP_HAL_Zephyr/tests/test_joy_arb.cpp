@@ -230,6 +230,48 @@ static void test_remote_stop_wins(void)
 	puts("STOP ALWAYS WINS: remote HOLD / DISARM at once, no resume without release + neutral + re-grip: ok");
 }
 
+/* pascal's ruling: source-aware radio failsafe, window 3 s */
+static void test_radio_failsafe_source(void)
+{
+	struct joy_rfs r = {};
+	const uint32_t W = 3000;
+	uint32_t t = 1000;
+
+	/* no radio ever, occupant drives: never a radio failsafe */
+	assert(!joy_rfs_allowed(&r, t, false, false, W));
+	assert(!joy_rfs_allowed(&r, t + 60000, false, true, W));
+	/* caregiver drives by radio, link lost: failsafe as today */
+	t = 100000;
+	assert(joy_rfs_allowed(&r, t, true, false, W));
+	assert(joy_rfs_allowed(&r, t + 500, false, false, W));
+	/* occupant grips at t+1000 with the radio still up, link lost 2 s later (within 3 s of the radio): acts */
+	t += 10000;
+	assert(joy_rfs_allowed(&r, t, true, false, W));
+	assert(joy_rfs_allowed(&r, t + 1000, true, true, W));
+	assert(joy_rfs_allowed(&r, t + 2000, false, true, W));
+	assert(joy_rfs_allowed(&r, t + 3000, false, true, W));
+	/* ... 3 s after the radio last commanded, the stick drives without it */
+	assert(!joy_rfs_allowed(&r, t + 3001, false, true, W));
+	assert(!joy_rfs_allowed(&r, t + 600000, false, true, W));
+	/* radio present the whole time the occupant drives, then lost: no failsafe */
+	t += 1000000;
+	assert(joy_rfs_allowed(&r, t, true, false, W));
+	for (uint32_t k = 1; k < 600; k++) {
+		assert(joy_rfs_allowed(&r, t + k * 100, true, true, W) == (k * 100 <= W));
+	}
+	assert(!joy_rfs_allowed(&r, t + 60000, false, true, W));
+	/* grip released with the radio gone: the radio is the source again -> acts (chair holds) */
+	assert(joy_rfs_allowed(&r, t + 61000, false, false, W));
+	/* re-grip, radio still gone, last radio command long ago: stick drives at once */
+	assert(!joy_rfs_allowed(&r, t + 62000, false, true, W));
+	/* window 0: only 'now' counts */
+	struct joy_rfs z = {};
+	assert(joy_rfs_allowed(&z, 5, true, false, 0));
+	assert(joy_rfs_allowed(&z, 5, false, true, 0));
+	assert(!joy_rfs_allowed(&z, 6, false, true, 0));
+	puts("radio failsafe: acts only if the radio commanded now or within FS_RC_SRC_TIME; stick alone drives: ok");
+}
+
 int main(void)
 {
 	test_codec();
@@ -238,6 +280,7 @@ int main(void)
 	test_stale_and_fault();
 	test_sequence();
 	test_remote_stop_wins();
+	test_radio_failsafe_source();
 	printf("joy_arb: all tests passed (%d invariant checks)\n", checks);
 	return 0;
 }
