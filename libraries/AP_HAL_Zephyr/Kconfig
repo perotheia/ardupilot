@@ -104,17 +104,42 @@ config AP_HAL_ZEPHYR_MONITOR
 	select THREAD_MONITOR
 	select SCHED_THREAD_USAGE
 	help
-	  Diagnostics from a thread above the ArduPilot main thread (so it
-	  still reports when main spins): scheduler ticks, current task,
-	  loop timing, free heap, the RPMsg link counters and the CPU share
-	  of every thread; every AP_HAL_ZEPHYR_MONITOR_TASKS_EVERY lines also
-	  the scheduler task table (@SYS/tasks.txt).
+	  Diagnostics from a thread just above the ArduPilot main thread
+	  (priority 7; it still reports when main spins, and preempts only
+	  main and the background threads): scheduler ticks, current task,
+	  loop timing, free heap, the RPMsg link counters, the CPU share of
+	  every thread, the stack headroom of every thread (with INIT_STACKS
+	  and THREAD_STACK_INFO) and the scheduler task table
+	  (@SYS/tasks.txt). The thread only reads ArduPilot state; the task
+	  statistics are allocated, formatted and reset by the main thread
+	  on its request. See Monitor.cpp for the console budget.
 
 config AP_HAL_ZEPHYR_MONITOR_PERIOD_MS
 	int "HAL monitor period in ms"
 	default 1000
 	range 100 60000
 	depends on AP_HAL_ZEPHYR_MONITOR
+
+config AP_HAL_ZEPHYR_MONITOR_PRINT_EVERY
+	int "HAL monitor: print the status lines every N periods"
+	default 1
+	range 1 3600
+	depends on AP_HAL_ZEPHYR_MONITOR
+	help
+	  With the default 1000 ms period: a status line every N seconds.
+	  Raise it to make a RAM console last longer (60 KiB hold about 2
+	  minutes at 1, about 20 minutes at 10). The CPU shares then cover N
+	  periods.
+
+config AP_HAL_ZEPHYR_MONITOR_STACKS_EVERY
+	int "HAL monitor: print the stack headroom every N status lines (0 = never)"
+	default 10
+	depends on AP_HAL_ZEPHYR_MONITOR
+	help
+	  Never-used bytes of every thread stack and, on Cortex-R, of the
+	  SVC (interrupt handlers) and IRQ stacks. Needs INIT_STACKS and
+	  THREAD_STACK_INFO; scanning a large unused stack takes tens of
+	  microseconds at the monitor's priority.
 
 config AP_HAL_ZEPHYR_MONITOR_TASKS_EVERY
 	int "HAL monitor: print the task table every N status lines (0 = never)"
