@@ -155,7 +155,7 @@ config AP_HAL_ZEPHYR_MB_I_TRIP_MA
 	default 40000
 
 config AP_HAL_ZEPHYR_MB_TRIP_MS
-	int "Over-current trip after, ms"
+	int "Over-current trip at this leaky count (+1 per ms above, -1 per ms below)"
 	default 10
 
 config AP_HAL_ZEPHYR_MB_SOFT_SLEW_PER_MS
@@ -163,8 +163,40 @@ config AP_HAL_ZEPHYR_MB_SOFT_SLEW_PER_MS
 	default 34
 
 config AP_HAL_ZEPHYR_MB_SOFT_MAX_MS
-	int "A soft stop ends in the safe state after, ms"
-	default 600
+	int "A soft stop (ramp + coast) ends in the safe state after, ms"
+	default 1200
+
+config AP_HAL_ZEPHYR_MB_COAST_MS
+	int "Soft stop: bridge enabled at duty 0 (short brake) this long before the parking brake, ms"
+	default 500
+
+config AP_HAL_ZEPHYR_MB_WELDED_MS
+	int "E-stop open with the motor bus still live this long = contactor report, ms"
+	default 500
+
+config AP_HAL_ZEPHYR_MB_BUS_MIN_MV
+	int "Battery reading below this = implausible, no driving, mV (0 = off)"
+	default 18000
+
+config AP_HAL_ZEPHYR_MB_ESTOP_DEBOUNCE_MS
+	int "E-stop open samples (ms) before the hard stop"
+	default 2
+
+config AP_HAL_ZEPHYR_MB_I_FILTER_SHIFT
+	int "Foldback current filter: 1/2^n per ms"
+	default 3
+
+config AP_HAL_ZEPHYR_MB_DUTY_CAP
+	int "Bench limit on |duty|, 1/10000 (0 = none)"
+	default 0
+
+config AP_HAL_ZEPHYR_MB_MAX_GAP_MS
+	int "Control steps further apart than this: hard latch (the dead-man cuts at ~10 ms), ms"
+	default 4
+
+config AP_HAL_ZEPHYR_MB_ALLOW_MOCK
+	bool "BENCH ONLY: allow arming with the mock sensors (motor power off)"
+	depends on AP_HAL_ZEPHYR_MOCK_SENSORS
 
 config AP_HAL_ZEPHYR_MB_IS_IDLE_MAX_MA
 	int "Plausibility: current reading above this with the bridge off = fault, mA (0 = off)"
@@ -172,15 +204,15 @@ config AP_HAL_ZEPHYR_MB_IS_IDLE_MAX_MA
 
 config AP_HAL_ZEPHYR_MB_IS_DEAD_DUTY
 	int "Plausibility: duty above this (1/10000) ..."
-	default 3000
+	default 5000
 
 config AP_HAL_ZEPHYR_MB_IS_DEAD_MIN_MA
 	int "... with a reading below this = fault, mA"
 	default 200
 
 config AP_HAL_ZEPHYR_MB_IS_FAULT_MS
-	int "Plausibility fault after, ms (0 = check off)"
-	default 50
+	int "Plausibility fault at this leaky count (+1 per implausible ms, -1 per plausible ms; 0 = off)"
+	default 300
 
 config AP_HAL_ZEPHYR_MB_VMOT_MAX_MV
 	int "Bus voltage (max of battery and motor bus) above which the duty ramps to 0, mV (0 = off; BTS7960 locks out at 27.6 V)"

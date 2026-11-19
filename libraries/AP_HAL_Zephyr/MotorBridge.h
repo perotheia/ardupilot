@@ -25,8 +25,11 @@ void init();
 bool is_motor_channel(uint8_t ch);
 /* RCOutput: the vehicle wrote a pulse (us, 0 = off) to a motor channel */
 void command(uint8_t ch, uint16_t pulse_us, bool enabled);
-/* Util::safety_switch_state(): the e-stop is open or latched */
+/* the e-stop is open or latched */
 bool estop_active();
+/* a reason not to arm: e-stop, latched fault, over-voltage, sensors stale or implausible, hardware not
+ * ready, mock sensors (Util::safety_switch_state() reports it as the safety switch while disarmed) */
+bool arming_blocked();
 } // namespace MotorBridge
 } // namespace Zephyr
 #endif

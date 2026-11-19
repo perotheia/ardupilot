@@ -62,8 +62,13 @@ AP_HAL::Util::safety_state Util::safety_switch_state(void)
         return SAFETY_NONE;
     }
 #ifdef CONFIG_AP_HAL_ZEPHYR_MOTOR_BRIDGE
-    /* an open or latched e-stop reads as the safety switch on: no arming, and the GCS shows it */
-    if (Zephyr::MotorBridge::estop_active()) {
+    /*
+     * While DISARMED only, a motor-bridge reason not to arm (e-stop, latched fault, ...) reads as the safety
+     * switch on: the arming checks refuse ("hardware safety switch"). Never while armed: Rover would drop
+     * soft-armed and raise it again when the reason went away, which would look like a fresh arm to the
+     * motor layer (an e-stop released while armed must not drive again before a real disarm + arm).
+     */
+    if (!get_soft_armed() && Zephyr::MotorBridge::arming_blocked()) {
         return SAFETY_DISARMED;
     }
 #endif
