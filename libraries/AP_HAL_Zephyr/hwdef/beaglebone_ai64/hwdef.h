@@ -39,6 +39,11 @@
 #define AP_SIM_ENABLED 0
 #endif
 
+// parameter defaults: the embedded region of AP_Param, filled after the link
+// from hwdef/beaglebone_ai64/defaults.parm by Tools/scripts/apj_tool.py (and
+// changeable on a binary without rebuilding: apj_tool.py zephyr.elf --set ...)
+#define AP_PARAM_MAX_EMBEDDED_PARAM 1024
+
 // features without backing yet on this board
 #define HAL_MOUNT_ENABLED 0
 #define AP_WINCH_ENABLED 0
@@ -67,6 +72,7 @@
 //   SERIAL0 = rpmsg-tty  MAVLink2 to Linux (/dev/ttyRPMSGn), baud ignored
 // later: GPS on UART6 (P9_14/P9_16), CRSF on UART4 (P9_37/P9_38)
 #define DEFAULT_SERIAL0_PROTOCOL SerialProtocol_MAVLink2
+
 #define DEFAULT_SERIAL0_BAUD 115
 
 // sensors: after the feature gates and the AP_Math dance (MockINS.h pulls the

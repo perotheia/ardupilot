@@ -1,0 +1,9 @@
+# BeagleBone AI-64 R5F ArduRover defaults (embedded after the link by apj_tool.py)
+# Rover's scheduler default is 50 Hz; the 400 Hz variant is the same ELF with
+# apj_tool.py <elf> --set SCHED_LOOP_RATE=400
+SCHED_LOOP_RATE 50
+# no compass on this vehicle: yaw from the GSF (GPS velocity while moving),
+# height from GPS (no baro fitted)
+COMPASS_ENABLE 0
+EK3_SRC1_YAW 8
+EK3_SRC1_POSZ 3
