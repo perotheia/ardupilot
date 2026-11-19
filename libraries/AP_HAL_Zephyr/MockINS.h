@@ -7,6 +7,8 @@
 #include <AP_InertialSensor/AP_InertialSensor.h>
 #include <AP_InertialSensor/AP_InertialSensor_Backend.h>
 
+#include "MockINSSched.h"
+
 // raw samples generated so far (for the HAL monitor)
 extern uint32_t ap_mock_ins_samples;
 
@@ -23,8 +25,9 @@ public:
 private:
     uint8_t _accel_instance;
     uint8_t _gyro_instance;
-    static constexpr uint64_t MOCK_SAMPLE_US = 1000; // 1 kHz, as registered
-    uint64_t _next_sample_us;
+    static constexpr uint64_t MOCK_SAMPLE_US = Zephyr::MOCK_INS_SAMPLE_US;
+    static constexpr uint32_t MOCK_MAX_CATCHUP = Zephyr::MOCK_INS_MAX_CATCHUP;
+    Zephyr::MockSampleClock _sample_clock;
 };
 
 #endif

@@ -16,7 +16,6 @@ AP_InertialSensor_Zephyr_Mock::AP_InertialSensor_Zephyr_Mock(AP_InertialSensor &
     : AP_InertialSensor_Backend(ins)
     , _accel_instance(0)
     , _gyro_instance(0)
-    , _next_sample_us(0)
 {
 }
 
@@ -44,22 +43,14 @@ AP_InertialSensor_Backend *AP_InertialSensor_Zephyr_Mock::probe(AP_InertialSenso
 // publishing alone left the main loop spinning there forever.
 void AP_InertialSensor_Zephyr_Mock::accumulate()
 {
-    const uint64_t now = AP_HAL::micros64();
+    // which samples are due: MockINSSched.h (host-tested). After a stall at
+    // most MOCK_MAX_CATCHUP periods are caught up, then the grid restarts.
+    const auto due = _sample_clock.due(AP_HAL::micros64(), MOCK_SAMPLE_US, MOCK_MAX_CATCHUP);
 
-    if (_next_sample_us == 0) {
-        _next_sample_us = now;
-    }
-    // catch up at most 20 samples (20 ms) after a stall, then resync
-    // (_next_sample_us is normally up to one period AHEAD of now: compare
-    // only when it is behind, the difference is unsigned)
-    if (now > _next_sample_us && now - _next_sample_us > 20 * MOCK_SAMPLE_US) {
-        _next_sample_us = now - 20 * MOCK_SAMPLE_US;
-    }
-    while (_next_sample_us <= now) {
-        _notify_new_accel_raw_sample(_accel_instance, Vector3f(0.0f, 0.0f, -GRAVITY_MSS),
-                                     _next_sample_us);
-        _notify_new_gyro_raw_sample(_gyro_instance, Vector3f(0.0f, 0.0f, 0.0f), _next_sample_us);
-        _next_sample_us += MOCK_SAMPLE_US;
+    for (uint32_t i = 0; i < due.count; i++) {
+        const uint64_t sample_us = due.first_us + i * MOCK_SAMPLE_US;
+        _notify_new_accel_raw_sample(_accel_instance, Vector3f(0.0f, 0.0f, -GRAVITY_MSS), sample_us);
+        _notify_new_gyro_raw_sample(_gyro_instance, Vector3f(0.0f, 0.0f, 0.0f), sample_us);
         ap_mock_ins_samples++;
     }
 }
