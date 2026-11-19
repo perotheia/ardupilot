@@ -5,11 +5,13 @@
 #include "Semaphores.h"
 
 struct device;  // forward-declare to avoid pulling in Zephyr headers here
+struct spi_config;
 
 class Zephyr::SPIDevice : public AP_HAL::SPIDevice {
 public:
-    SPIDevice(const struct device *dev, uint8_t cs,
+    SPIDevice(const struct device *dev, uint8_t bus, uint8_t cs,
               uint32_t lowspeed, uint32_t highspeed, uint8_t mode);
+    ~SPIDevice() override;
 
     bool set_speed(AP_HAL::Device::Speed speed) override;
     bool transfer(const uint8_t *send, uint32_t send_len,
@@ -31,6 +33,13 @@ private:
     uint8_t  _mode;
     bool     _high_speed;
     Semaphore _semaphore;
+    /*
+     * One persistent config per speed: Zephyr's SPI layer takes a config
+     * it has seen before (same address) as already applied, so a config
+     * built on the stack per transfer could keep another device's chip
+     * select or clock.
+     */
+    struct spi_config *_cfg[2];
 };
 
 class Zephyr::SPIDeviceManager : public AP_HAL::SPIDeviceManager {
